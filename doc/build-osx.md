@@ -74,16 +74,6 @@ It is not necessary to build wallet functionality to run `naviod` or  `navio-qt`
 macOS ships with a useable `sqlite` package, meaning you don't need to
 install anything.
 
-###### Legacy Wallet Support
-
-`berkeley-db@4` is only required to support for legacy wallets.
-Skip if you don't intend to use legacy wallets.
-
-``` bash
-brew install berkeley-db@4
-```
----
-
 #### GUI Dependencies
 
 ###### Qt
@@ -172,27 +162,18 @@ It is required that you have `python` installed.
 
 There are many ways to configure Bitcoin Core, here are a few common examples:
 
-##### Wallet (BDB + SQlite) Support, No GUI:
-
-If `berkeley-db@4` is installed, then legacy wallet support will be built.
-If `sqlite` is installed, then descriptor wallet support will also be built.
-Additionally, this explicitly disables the GUI.
+##### Wallet (SQLite) Support, No GUI:
 
 ``` bash
 ./autogen.sh
 ./configure --with-gui=no
 ```
 
-##### Wallet (only SQlite) and GUI Support:
-
-This explicitly enables the GUI and disables legacy wallet support.
-If `qt` is not installed, this will throw an error.
-If `sqlite` is installed then descriptor wallet functionality will be built.
-If `sqlite` is not installed, then wallet functionality will be disabled.
+##### Wallet and GUI Support:
 
 ``` bash
 ./autogen.sh
-./configure --without-bdb --with-gui=yes
+./configure --with-gui=yes
 ```
 
 ##### No Wallet or GUI

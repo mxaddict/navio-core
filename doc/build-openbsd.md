@@ -37,24 +37,6 @@ It is not necessary to build wallet functionality to run either `naviod` or `nav
 pkg_add sqlite3
 ```
 
-###### Legacy Wallet Support
-BerkeleyDB is only required to support legacy wallets.
-
-It is recommended to use Berkeley DB 4.8. You cannot use the BerkeleyDB library
-from ports. However you can build it yourself, [using depends](/depends).
-
-```bash
-gmake -C depends NO_BOOST=1 NO_LIBEVENT=1 NO_SQLITE=1 NO_NATPMP=1 NO_UPNP=1 NO_ZMQ=1 NO_USDT=1
-...
-to: /path/to/bitcoin/depends/x86_64-unknown-openbsd
-```
-
-Then set `BDB_PREFIX`:
-
-```bash
-export BDB_PREFIX="/path/to/bitcoin/depends/x86_64-unknown-openbsd"
-```
-
 #### GUI Dependencies
 ###### Qt5
 
@@ -89,14 +71,10 @@ This enables the GUI and descriptor wallet support, assuming `sqlite` and `qt5` 
 ./configure MAKE=gmake
 ```
 
-##### Descriptor & Legacy Wallet. No GUI:
-This enables support for both wallet types and disables the GUI:
+##### Wallet, No GUI:
 
 ```bash
-./configure --with-gui=no \
-    BDB_LIBS="-L${BDB_PREFIX}/lib -ldb_cxx-4.8" \
-    BDB_CFLAGS="-I${BDB_PREFIX}/include" \
-    MAKE=gmake
+./configure --with-gui=no MAKE=gmake
 ```
 
 ### 2. Compile
