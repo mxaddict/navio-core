@@ -22,7 +22,7 @@ static void WalletCreate(benchmark::Bench& bench, bool encrypted)
     DatabaseOptions options;
     options.require_format = DatabaseFormat::SQLITE;
     options.require_create = true;
-    options.create_flags = WALLET_FLAG_DESCRIPTORS;
+    options.create_flags = WALLET_FLAG_BLSCT;
 
     if (encrypted) {
         options.create_passphrase = random.rand256().ToString();

@@ -71,10 +71,10 @@ enum WalletFlags : uint64_t {
     //! then improperly reinitializing it.
     WALLET_FLAG_BLANK_WALLET = (1ULL << 33),
 
-    //! Indicate that this wallet supports DescriptorScriptPubKeyMan
+    //! Deprecated: no longer set; retained for database compatibility only
     WALLET_FLAG_DESCRIPTORS = (1ULL << 34),
 
-    //! Indicates that the wallet needs an external signer
+    //! Deprecated: no longer set; retained for database compatibility only
     WALLET_FLAG_EXTERNAL_SIGNER = (1ULL << 35),
 
     //! Indicates that the wallet is used for BLSCT transactions

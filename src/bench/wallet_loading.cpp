@@ -26,7 +26,7 @@ static void AddTx(CWallet& wallet)
     wallet.AddToWallet(MakeTransactionRef(mtx), TxStateInactive{});
 }
 
-static void WalletLoading(benchmark::Bench& bench, bool legacy_wallet)
+static void WalletLoading(benchmark::Bench& bench)
 {
     const auto test_setup = MakeNoLogFileContext<TestingSetup>();
 
@@ -36,10 +36,7 @@ static void WalletLoading(benchmark::Bench& bench, bool legacy_wallet)
 
     // Setup the wallet
     // Loading the wallet will also create it
-    uint64_t create_flags = 0;
-    if (!legacy_wallet) {
-        create_flags = WALLET_FLAG_DESCRIPTORS;
-    }
+    const uint64_t create_flags = WALLET_FLAG_BLSCT;
     auto database = CreateMockableWalletDatabase();
     auto wallet = TestLoadWallet(std::move(database), context, create_flags);
 
@@ -62,9 +59,9 @@ static void WalletLoading(benchmark::Bench& bench, bool legacy_wallet)
     });
 }
 
-static void WalletLoadingDescriptors(benchmark::Bench& bench)
+static void WalletLoadingBLSCT(benchmark::Bench& bench)
 {
-    WalletLoading(bench, /*legacy_wallet=*/false);
+    WalletLoading(bench);
 }
-BENCHMARK(WalletLoadingDescriptors, benchmark::PriorityLevel::HIGH);
+BENCHMARK(WalletLoadingBLSCT, benchmark::PriorityLevel::HIGH);
 } // namespace wallet

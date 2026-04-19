@@ -69,8 +69,6 @@ static RPCHelpMan getwalletinfo()
                                                                                                                        {RPCResult::Type::NUM, "progress", "scanning progress percentage [0.0, 1.0]"},
                                                                                                                    },
                  /*skip_type_check=*/true},
-                {RPCResult::Type::BOOL, "descriptors", "whether this wallet uses descriptors for scriptPubKey management"},
-                {RPCResult::Type::BOOL, "external_signer", "whether this wallet is configured to use an external signer such as a hardware wallet"},
                 {RPCResult::Type::BOOL, "blsct", "whether this wallet supports BLSCT keys"},
                 {RPCResult::Type::BOOL, "blank", "Whether this wallet intentionally does not contain any keys, scripts, or descriptors"},
                 {RPCResult::Type::NUM_TIME, "birthtime", /*optional=*/true, "The start time for blocks scanning. It could be modified by (re)importing any descriptor with an earlier timestamp."},
@@ -113,14 +111,6 @@ static RPCHelpMan getwalletinfo()
                 if (!seed_id.IsNull()) {
                     obj.pushKV("hdseedid", seed_id.GetHex());
                 }
-            } else {
-                LegacyScriptPubKeyMan* spk_man = pwallet->GetLegacyScriptPubKeyMan();
-                if (spk_man) {
-                    CKeyID seed_id = spk_man->GetHDChain().seed_id;
-                    if (!seed_id.IsNull()) {
-                        obj.pushKV("hdseedid", seed_id.GetHex());
-                    }
-                }
             }
 
             if (pwallet->CanSupportFeature(FEATURE_HD_SPLIT)) {
@@ -140,8 +130,6 @@ static RPCHelpMan getwalletinfo()
             } else {
                 obj.pushKV("scanning", false);
             }
-            obj.pushKV("descriptors", pwallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS));
-            obj.pushKV("external_signer", pwallet->IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER));
             obj.pushKV("blsct", pwallet->IsWalletFlagSet(WALLET_FLAG_BLSCT));
             obj.pushKV("blank", pwallet->IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET));
             if (int64_t birthtime = pwallet->GetBirthTime(); birthtime != UNKNOWN_TIME) {
@@ -349,13 +337,10 @@ static RPCHelpMan createwallet()
         {
             {"wallet_name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name for the new wallet. If this is a path, the wallet will be created at the path location."},
             {"disable_private_keys", RPCArg::Type::BOOL, RPCArg::Default{false}, "Disable the possibility of private keys (only watchonlys are possible in this mode)."},
-            {"blank", RPCArg::Type::BOOL, RPCArg::Default{false}, "Create a blank wallet. A blank wallet has no keys or HD seed. One can be set using sethdseed."},
+            {"blank", RPCArg::Type::BOOL, RPCArg::Default{false}, "Create a blank wallet. A blank wallet has no keys or HD seed."},
             {"passphrase", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Encrypt the wallet with this passphrase."},
             {"avoid_reuse", RPCArg::Type::BOOL, RPCArg::Default{false}, "Keep track of coin reuse, and treat dirty and clean coins differently with privacy considerations in mind."},
-            {"descriptors", RPCArg::Type::BOOL, RPCArg::Default{true}, "Create a native descriptor wallet. The wallet will use descriptors internally to handle address creation."},
             {"load_on_startup", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED, "Save wallet name to persistent settings and load on startup. True to add wallet to startup list, false to remove, null to leave unchanged."},
-            {"external_signer", RPCArg::Type::BOOL, RPCArg::Default{false}, "Use an external signer such as a hardware wallet. Requires -signer to be configured. Wallet creation will fail if keys cannot be fetched. Requires disable_private_keys and descriptors set to true."},
-            {"blsct", RPCArg::Type::BOOL, RPCArg::Default{false}, "Create a wallet with BLSCT keys."},
             {"storage_output", RPCArg::Type::BOOL, RPCArg::Default{false}, "Enables the storage of outputs instead of full txs (experimental)."},
             {"seed", RPCArg::Type::STR_HEX, RPCArg::Default{""}, "Create the wallet from the specified seed (can be a master seed or an audit key)."},
         },
@@ -367,10 +352,10 @@ static RPCHelpMan createwallet()
                                                                                                                                                                      {RPCResult::Type::STR, "", ""},
                                                                                                                                                                  }},
                                           }},
-        RPCExamples{HelpExampleCli("createwallet", "\"testwallet\"") + HelpExampleRpc("createwallet", "\"testwallet\"") + HelpExampleCliNamed("createwallet", {{"wallet_name", "descriptors"}, {"avoid_reuse", true}, {"descriptors", true}, {"load_on_startup", true}}) + HelpExampleRpcNamed("createwallet", {{"wallet_name", "descriptors"}, {"avoid_reuse", true}, {"descriptors", true}, {"load_on_startup", true}})},
+        RPCExamples{HelpExampleCli("createwallet", "\"testwallet\"") + HelpExampleRpc("createwallet", "\"testwallet\"") + HelpExampleCliNamed("createwallet", {{"wallet_name", "mywallet"}, {"avoid_reuse", true}, {"load_on_startup", true}}) + HelpExampleRpcNamed("createwallet", {{"wallet_name", "mywallet"}, {"avoid_reuse", true}, {"load_on_startup", true}})},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
             WalletContext& context = EnsureWalletContext(request.context);
-            uint64_t flags = 0;
+            uint64_t flags = WALLET_FLAG_BLSCT;
             if (!request.params[1].isNull() && request.params[1].get_bool()) {
                 flags |= WALLET_FLAG_DISABLE_PRIVATE_KEYS;
             }
@@ -392,34 +377,15 @@ static RPCHelpMan createwallet()
             if (!request.params[4].isNull() && request.params[4].get_bool()) {
                 flags |= WALLET_FLAG_AVOID_REUSE;
             }
-            if (request.params[5].isNull() || request.params[5].get_bool()) {
-#ifndef USE_SQLITE
-                throw JSONRPCError(RPC_WALLET_ERROR, "Compiled without sqlite support (required for descriptor wallets)");
-#endif
-                flags |= WALLET_FLAG_DESCRIPTORS;
-            }
-            if (!request.params[7].isNull() && request.params[7].get_bool()) {
-#ifdef ENABLE_EXTERNAL_SIGNER
-                flags |= WALLET_FLAG_EXTERNAL_SIGNER;
-#else
-                throw JSONRPCError(RPC_WALLET_ERROR, "Compiled without external signing support (required for external signing)");
-#endif
-            }
 
-
-            if (!request.params[8].isNull() && request.params[8].get_bool()) {
-                flags |= WALLET_FLAG_BLSCT;
-                flags &= ~WALLET_FLAG_DESCRIPTORS;
-            }
-
-            if (!request.params[9].isNull() && request.params[9].get_bool()) {
+            if (!request.params[6].isNull() && request.params[6].get_bool()) {
                 flags |= WALLET_FLAG_BLSCT_OUTPUT_STORAGE;
             }
 
             std::vector<unsigned char> seed;
             blsct::SeedType type = blsct::IMPORT_MASTER_KEY;
-            if (!request.params[10].isNull() && request.params[10].isStr()) {
-                seed = ParseHex(request.params[10].get_str());
+            if (!request.params[7].isNull() && request.params[7].isStr()) {
+                seed = ParseHex(request.params[7].get_str());
 
                 if (seed.size() == 80) {
                     type = blsct::IMPORT_VIEW_KEY;
@@ -437,7 +403,7 @@ static RPCHelpMan createwallet()
             options.create_passphrase = passphrase;
             bilingual_str error;
 
-            std::optional<bool> load_on_start = request.params[6].isNull() ? std::nullopt : std::optional<bool>(request.params[6].get_bool());
+            std::optional<bool> load_on_start = request.params[5].isNull() ? std::nullopt : std::optional<bool>(request.params[5].get_bool());
             const std::shared_ptr<CWallet> wallet = CreateWallet(context, request.params[0].get_str(), seed, type, load_on_start, options, status, error, warnings);
             if (!wallet) {
                 RPCErrorCode code = status == DatabaseStatus::FAILED_ENCRYPT ? RPC_WALLET_ENCRYPTION_FAILED : RPC_WALLET_ERROR;
@@ -515,74 +481,6 @@ static RPCHelpMan unloadwallet()
 
     return result;
 },
-    };
-}
-
-static RPCHelpMan sethdseed()
-{
-    return RPCHelpMan{
-        "sethdseed",
-        "\nSet or generate a new HD wallet seed. Non-HD wallets will not be upgraded to being a HD wallet. Wallets that are already\n"
-        "HD will have a new HD seed set so that new keys added to the keypool will be derived from this new seed.\n"
-        "\nNote that you will need to MAKE A NEW BACKUP of your wallet after setting the HD wallet seed." +
-            HELP_REQUIRING_PASSPHRASE +
-            "Note: This command is only compatible with legacy wallets.\n",
-        {
-            {"newkeypool", RPCArg::Type::BOOL, RPCArg::Default{true}, "Whether to flush old unused addresses, including change addresses, from the keypool and regenerate it.\n"
-                                                                      "If true, the next address from getnewaddress and change address from getrawchangeaddress will be from this new seed.\n"
-                                                                      "If false, addresses (including change addresses if the wallet already had HD Chain Split enabled) from the existing\n"
-                                                                      "keypool will be used until it has been depleted."},
-            {"seed", RPCArg::Type::STR, RPCArg::DefaultHint{"random seed"}, "The WIF private key to use as the new HD seed.\n"
-                                                                            "The seed value can be retrieved using the dumpwallet command. It is the private key marked hdseed=1"},
-        },
-        RPCResult{RPCResult::Type::NONE, "", ""},
-        RPCExamples{
-            HelpExampleCli("sethdseed", "") + HelpExampleCli("sethdseed", "false") + HelpExampleCli("sethdseed", "true \"wifkey\"") + HelpExampleRpc("sethdseed", "true, \"wifkey\"")},
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
-            std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-            if (!pwallet) return UniValue::VNULL;
-
-            LegacyScriptPubKeyMan& spk_man = EnsureLegacyScriptPubKeyMan(*pwallet, true);
-
-            if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-                throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set a HD seed to a wallet with private keys disabled");
-            }
-
-            LOCK2(pwallet->cs_wallet, spk_man.cs_KeyStore);
-
-            // Do not do anything to non-HD wallets
-            if (!pwallet->CanSupportFeature(FEATURE_HD)) {
-                throw JSONRPCError(RPC_WALLET_ERROR, "Cannot set an HD seed on a non-HD wallet. Use the upgradewallet RPC in order to upgrade a non-HD wallet to HD");
-            }
-
-            EnsureWalletIsUnlocked(*pwallet);
-
-            bool flush_key_pool = true;
-            if (!request.params[0].isNull()) {
-                flush_key_pool = request.params[0].get_bool();
-            }
-
-            CPubKey master_pub_key;
-            if (request.params[1].isNull()) {
-                master_pub_key = spk_man.GenerateNewSeed();
-            } else {
-                CKey key = DecodeSecret(request.params[1].get_str());
-                if (!key.IsValid()) {
-                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key");
-                }
-
-                if (HaveKey(spk_man, key)) {
-                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Already have this key (either as an HD seed or as a loose private key)");
-                }
-
-                master_pub_key = spk_man.DeriveNewSeed(key);
-            }
-
-            spk_man.SetHDSeed(master_pub_key);
-            if (flush_key_pool) spk_man.NewKeyPool();
-
-            return UniValue::VNULL;
-        },
     };
 }
 
@@ -756,74 +654,6 @@ RPCHelpMan simulaterawtransaction()
     };
 }
 
-static RPCHelpMan migratewallet()
-{
-    return RPCHelpMan{"migratewallet",
-        "EXPERIMENTAL warning: This call may not work as expected and may be changed in future releases\n"
-        "\nMigrate the wallet to a descriptor wallet.\n"
-        "A new wallet backup will need to be made.\n"
-        "\nThe migration process will create a backup of the wallet before migrating. This backup\n"
-        "file will be named <wallet name>-<timestamp>.legacy.bak and can be found in the directory\n"
-        "for this wallet. In the event of an incorrect migration, the backup can be restored using restorewallet."
-        "\nEncrypted wallets must have the passphrase provided as an argument to this call.",
-        {
-            {"wallet_name", RPCArg::Type::STR, RPCArg::DefaultHint{"the wallet name from the RPC endpoint"}, "The name of the wallet to migrate. If provided both here and in the RPC endpoint, the two must be identical."},
-            {"passphrase", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The wallet passphrase"},
-        },
-        RPCResult{
-            RPCResult::Type::OBJ, "", "",
-            {
-                {RPCResult::Type::STR, "wallet_name", "The name of the primary migrated wallet"},
-                {RPCResult::Type::STR, "watchonly_name", /*optional=*/true, "The name of the migrated wallet containing the watchonly scripts"},
-                {RPCResult::Type::STR, "solvables_name", /*optional=*/true, "The name of the migrated wallet containing solvable but not watched scripts"},
-                {RPCResult::Type::STR, "backup_path", "The location of the backup of the original wallet"},
-            }
-        },
-        RPCExamples{
-            HelpExampleCli("migratewallet", "")
-            + HelpExampleRpc("migratewallet", "")
-        },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-        {
-            std::string wallet_name;
-            if (GetWalletNameFromJSONRPCRequest(request, wallet_name)) {
-                if (!(request.params[0].isNull() || request.params[0].get_str() == wallet_name)) {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "RPC endpoint wallet and wallet_name parameter specify different wallets");
-                }
-            } else {
-                if (request.params[0].isNull()) {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Either RPC endpoint wallet or wallet_name parameter must be provided");
-                }
-                wallet_name = request.params[0].get_str();
-            }
-
-            SecureString wallet_pass;
-            wallet_pass.reserve(100);
-            if (!request.params[1].isNull()) {
-                wallet_pass = std::string_view{request.params[1].get_str()};
-            }
-
-            WalletContext& context = EnsureWalletContext(request.context);
-            util::Result<MigrationResult> res = MigrateLegacyToDescriptor(wallet_name, wallet_pass, context);
-            if (!res) {
-                throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(res).original);
-            }
-
-            UniValue r{UniValue::VOBJ};
-            r.pushKV("wallet_name", res->wallet_name);
-            if (res->watchonly_wallet) {
-                r.pushKV("watchonly_name", res->watchonly_wallet->GetName());
-            }
-            if (res->solvables_wallet) {
-                r.pushKV("solvables_name", res->solvables_wallet->GetName());
-            }
-            r.pushKV("backup_path", res->backup_path.utf8string());
-
-            return r;
-        },
-    };
-}
-
 // addresses
 RPCHelpMan getaddressinfo();
 RPCHelpMan getnewaddress();
@@ -851,8 +681,6 @@ RPCHelpMan importwallet();
 RPCHelpMan importprunedfunds();
 RPCHelpMan removeprunedfunds();
 RPCHelpMan importmulti();
-RPCHelpMan importdescriptors();
-RPCHelpMan listdescriptors();
 RPCHelpMan backupwallet();
 RPCHelpMan restorewallet();
 
@@ -930,7 +758,6 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &getbalances},
         {"wallet", &getwalletinfo},
         {"wallet", &importaddress},
-        {"wallet", &importdescriptors},
         {"wallet", &importmulti},
         {"wallet", &importprivkey},
         {"wallet", &importprunedfunds},
@@ -938,7 +765,6 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &importwallet},
         {"wallet", &keypoolrefill},
         {"wallet", &listaddressgroupings},
-        {"wallet", &listdescriptors},
         {"wallet", &listlabels},
         {"wallet", &listlockunspent},
         {"wallet", &listreceivedbyaddress},
@@ -952,14 +778,12 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &listwallets},
         {"wallet", &loadwallet},
         {"wallet", &lockunspent},
-        {"wallet", &migratewallet},
         {"wallet", &newkeypool},
         {"wallet", &removeprunedfunds},
         {"wallet", &rescanblockchain},
         {"wallet", &send},
         {"wallet", &sendmany},
         {"wallet", &sendtoaddress},
-        {"wallet", &sethdseed},
         {"wallet", &setlabel},
         {"wallet", &settxfee},
         {"wallet", &setwalletflag},
