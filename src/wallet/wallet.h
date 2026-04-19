@@ -1004,16 +1004,13 @@ public:
     //! Get the wallet descriptors for a script.
     std::vector<WalletDescriptor> GetWalletDescriptors(const CScript& script) const;
 
-    //! Get the LegacyScriptPubKeyMan which is used for all types, internal, and external.
+    //! Always returns nullptr (LegacyScriptPubKeyMan removed)
     LegacyScriptPubKeyMan* GetLegacyScriptPubKeyMan() const;
     LegacyScriptPubKeyMan* GetOrCreateLegacyScriptPubKeyMan();
+    void SetupLegacyScriptPubKeyMan();
 
-    //! Get the LegacyScriptPubKeyMan which is used for all types, internal, and external.
     blsct::KeyMan* GetBLSCTKeyMan() const;
     blsct::KeyMan* GetOrCreateBLSCTKeyMan();
-
-    //! Make a LegacyScriptPubKeyMan and set it for all types, internal, and external.
-    void SetupLegacyScriptPubKeyMan();
 
     //! Make a BLSCTKeyMan and set it for all types, internal, and external.
     void SetupBLSCTKeyMan();
@@ -1088,13 +1085,6 @@ public:
      * May crash if something unexpected happens in the filesystem.
      */
     bool MigrateToSQLite(bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-
-    //! Get all of the descriptors from a legacy wallet
-    std::optional<MigrationData> GetDescriptorsForLegacy(bilingual_str& error) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-
-    //! Adds the ScriptPubKeyMans given in MigrationData to this wallet, removes LegacyScriptPubKeyMan,
-    //! and where needed, moves tx and address book entries to watchonly_wallet or solvable_wallet
-    bool ApplyMigrationData(MigrationData& data, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     //! Whether the (external) signer performs R-value signature grinding
     bool CanGrindR() const;
