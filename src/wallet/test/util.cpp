@@ -103,7 +103,7 @@ std::shared_ptr<CWallet> TestLoadWallet(std::unique_ptr<WalletDatabase> database
 std::shared_ptr<CWallet> TestLoadWallet(WalletContext& context)
 {
     DatabaseOptions options;
-    options.create_flags = WALLET_FLAG_DESCRIPTORS;
+    options.create_flags = WALLET_FLAG_BLSCT;
     DatabaseStatus status;
     bilingual_str error;
     std::vector<bilingual_str> warnings;

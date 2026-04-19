@@ -12,7 +12,7 @@
 #include <wallet/sqlite.h>
 #endif
 #include <wallet/test/util.h>
-#include <wallet/walletutil.h> // for WALLET_FLAG_DESCRIPTORS
+#include <wallet/walletutil.h>
 
 #include <fstream>
 #include <memory>
