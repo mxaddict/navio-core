@@ -1025,9 +1025,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """Checks whether the wallet module was compiled with Sqlite support."""
         return self.config["components"].getboolean("USE_SQLITE")
 
-    def is_bdb_compiled(self):
-        """Checks whether the wallet module was compiled with BDB support."""
-        return self.config["components"].getboolean("USE_BDB")
 
     def has_blockfile(self, node, filenum: str):
         return (node.blocks_path/ f"blk{filenum}.dat").is_file()
