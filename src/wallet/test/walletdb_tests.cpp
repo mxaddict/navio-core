@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test/util/setup_common.h>
+#include <blsct/wallet/keyman.h>
 #include <clientversion.h>
 #include <streams.h>
 #include <uint256.h>
@@ -44,14 +45,15 @@ BOOST_AUTO_TEST_CASE(walletdb_read_write_deadlock)
         std::shared_ptr<CWallet> wallet(new CWallet(m_node.chain.get(), "", std::move(db)));
         wallet->m_keypool_size = 4;
 
-        // Create legacy spkm
+        // Create BLSCT spkm
         LOCK(wallet->cs_wallet);
-        auto legacy_spkm = wallet->GetOrCreateLegacyScriptPubKeyMan();
-        BOOST_CHECK(legacy_spkm->SetupGeneration(true));
+        wallet->InitWalletFlags(WALLET_FLAG_BLSCT);
+        auto blsct_km = wallet->GetOrCreateBLSCTKeyMan();
+        BOOST_CHECK(blsct_km->SetupGeneration({}, blsct::IMPORT_MASTER_KEY, true));
         wallet->Flush();
 
         // Now delete all records, which performs a read write operation.
-        BOOST_CHECK(wallet->GetLegacyScriptPubKeyMan()->DeleteRecords());
+        BOOST_CHECK(wallet->GetBLSCTKeyMan()->DeleteRecords());
     }
 }
 
