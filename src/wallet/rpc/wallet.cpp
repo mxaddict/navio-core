@@ -660,9 +660,7 @@ RPCHelpMan getnewaddress();
 RPCHelpMan getrawchangeaddress();
 RPCHelpMan setlabel();
 RPCHelpMan listaddressgroupings();
-RPCHelpMan addmultisigaddress();
 RPCHelpMan keypoolrefill();
-RPCHelpMan newkeypool();
 RPCHelpMan getaddressesbylabel();
 RPCHelpMan listlabels();
 #ifdef ENABLE_EXTERNAL_SIGNER
@@ -672,15 +670,8 @@ RPCHelpMan walletdisplayaddress();
 // backup
 RPCHelpMan getblsctseed();
 RPCHelpMan getblsctauditkey();
-RPCHelpMan dumpprivkey();
-RPCHelpMan importprivkey();
-RPCHelpMan importaddress();
-RPCHelpMan importpubkey();
-RPCHelpMan dumpwallet();
-RPCHelpMan importwallet();
 RPCHelpMan importprunedfunds();
 RPCHelpMan removeprunedfunds();
-RPCHelpMan importmulti();
 RPCHelpMan backupwallet();
 RPCHelpMan restorewallet();
 
@@ -735,14 +726,11 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"rawtransactions", &fundrawtransaction},
         {"wallet", &abandontransaction},
         {"wallet", &abortrescan},
-        {"wallet", &addmultisigaddress},
         {"wallet", &backupwallet},
         {"wallet", &bumpfee},
         {"wallet", &psbtbumpfee},
         {"wallet", &createwallet},
         {"wallet", &restorewallet},
-        {"wallet", &dumpprivkey},
-        {"wallet", &dumpwallet},
         {"wallet", &encryptwallet},
         {"wallet", &getaddressesbylabel},
         {"wallet", &getaddressinfo},
@@ -757,12 +745,7 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &getunconfirmedbalance},
         {"wallet", &getbalances},
         {"wallet", &getwalletinfo},
-        {"wallet", &importaddress},
-        {"wallet", &importmulti},
-        {"wallet", &importprivkey},
         {"wallet", &importprunedfunds},
-        {"wallet", &importpubkey},
-        {"wallet", &importwallet},
         {"wallet", &keypoolrefill},
         {"wallet", &listaddressgroupings},
         {"wallet", &listlabels},
@@ -778,7 +761,6 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &listwallets},
         {"wallet", &loadwallet},
         {"wallet", &lockunspent},
-        {"wallet", &newkeypool},
         {"wallet", &removeprunedfunds},
         {"wallet", &rescanblockchain},
         {"wallet", &send},
