@@ -10,6 +10,9 @@
 #include <vector>
 
 #include <addresstype.h>
+#include <blsct/arith/mcl/mcl_scalar.h>
+#include <blsct/wallet/address.h>
+#include <blsct/wallet/keyman.h>
 #include <interfaces/chain.h>
 #include <key_io.h>
 #include <node/blockstorage.h>
@@ -843,6 +846,117 @@ BOOST_FIXTURE_TEST_CASE(wallet_sync_tx_invalid_state_test, TestingSetup)
     // BOOST_CHECK_EXCEPTION(wallet.transactionAddedToMempool(MakeTransactionRef(mtx)),
     //                       std::runtime_error,
     //                       HasReason("DB error adding transaction to wallet, write failed"));
+}
+
+BOOST_FIXTURE_TEST_CASE(CreateWallet, TestBLSCTChain100Setup)
+{
+    m_args.ForceSetArg("-unsafesqlitesync", "1");
+    WalletContext context;
+    context.args = &m_args;
+    context.chain = m_node.chain.get();
+
+    // Create wallet with BLSCT keys, record destination, then unload
+    auto wallet = TestLoadWallet(context);
+    blsct::SubAddress walletDest;
+    {
+        LOCK(wallet->cs_wallet);
+        auto blsct_km = wallet->GetOrCreateBLSCTKeyMan();
+        blsct_km->SetHDSeed(MclScalar(uint256(uint64_t{1})));
+        blsct_km->NewSubAddressPool();
+        blsct_km->NewSubAddressPool(-1);
+        walletDest = blsct::SubAddress(std::get<blsct::DoublePublicKey>(blsct_km->GetNewDestination(0).value()));
+    }
+    TestUnloadWallet(std::move(wallet));
+
+    int addtx_count = 0;
+    DebugLogHelper addtx_counter("[default wallet] AddToWallet", [&](const std::string* s) {
+        if (s) ++addtx_count;
+        return false;
+    });
+
+    bool rescan_completed = false;
+    DebugLogHelper rescan_check("[default wallet] Rescan completed", [&](const std::string* s) {
+        if (s) rescan_completed = true;
+        return false;
+    });
+
+    // Block the notification queue, mine a block paying to the wallet
+    std::promise<void> promise;
+    CallFunctionInValidationInterfaceQueue([&promise] {
+        promise.get_future().wait();
+    });
+    auto block = CreateAndProcessBlock({}, walletDest);
+    auto block_tx_hash = block.vtx[0]->GetHash();
+
+    // Reload wallet — rescan finds block tx despite blocked notifications
+    wallet = TestLoadWallet(context);
+    BOOST_CHECK(rescan_completed);
+    BOOST_CHECK_EQUAL(addtx_count, 1);
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_tx_hash), 1U);
+    }
+
+    // Unblock queue — queued blockConnected fires, AddToWallet called again for same tx
+    promise.set_value();
+    SyncWithValidationInterfaceQueue();
+    BOOST_CHECK_EQUAL(addtx_count, 2);
+
+    TestUnloadWallet(std::move(wallet));
+
+    // Second scenario: new block arrives during wallet load handler callback.
+    // No rescan needed (best block already at tip), only the new block's tx is added.
+    addtx_count = 0;
+    auto handler = HandleLoadWallet(context, [&](std::unique_ptr<interfaces::Wallet> w) {
+        CreateAndProcessBlock({}, walletDest);
+        SyncWithValidationInterfaceQueue();
+    });
+    wallet = TestLoadWallet(context);
+    // Only the new block's coinbase tx is added via blockConnected
+    BOOST_CHECK_EQUAL(addtx_count, 1);
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_tx_hash), 1U);
+    }
+
+    TestUnloadWallet(std::move(wallet));
+}
+
+BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestBLSCTChain100Setup)
+{
+    m_args.ForceSetArg("-unsafesqlitesync", "1");
+    WalletContext context;
+    context.args = &m_args;
+    context.chain = m_node.chain.get();
+
+    // Create wallet with BLSCT keys
+    auto wallet = TestLoadWallet(context);
+    blsct::SubAddress walletDest;
+    {
+        LOCK(wallet->cs_wallet);
+        auto blsct_km = wallet->GetOrCreateBLSCTKeyMan();
+        blsct_km->SetHDSeed(MclScalar(uint256(uint64_t{1})));
+        blsct_km->NewSubAddressPool();
+        blsct_km->NewSubAddressPool(-1);
+        walletDest = blsct::SubAddress(std::get<blsct::DoublePublicKey>(blsct_km->GetNewDestination(0).value()));
+    }
+
+    // Mine a block to the wallet's address
+    auto block = CreateAndProcessBlock({}, walletDest);
+    SyncWithValidationInterfaceQueue();
+
+    auto block_hash = block.vtx[0]->GetHash();
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_hash), 1u);
+
+        std::vector<uint256> vHashIn{block_hash}, vHashOut;
+        BOOST_CHECK_EQUAL(wallet->ZapSelectTx(vHashIn, vHashOut), DBErrors::LOAD_OK);
+
+        BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_hash), 0u);
+    }
+
+    TestUnloadWallet(std::move(wallet));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
