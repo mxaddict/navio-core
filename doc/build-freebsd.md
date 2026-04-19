@@ -25,7 +25,7 @@ git clone https://github.com/bitcoin/bitcoin.git
 ### 3. Install Optional Dependencies
 
 #### Wallet Dependencies
-It is not necessary to build wallet functionality to run either `naviod` or `navio-qt`.
+It is not necessary to build wallet functionality to run `naviod`.
 
 ###### Descriptor Wallet Support
 
@@ -34,21 +34,6 @@ Skip if you don't intend to use descriptor wallets.
 ``` bash
 pkg install sqlite3
 ```
-
-#### GUI Dependencies
-###### Qt5
-
-Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, we need to install `qt5`. Skip if you don't intend to use the GUI.
-```bash
-pkg install qt5
-```
-###### libqrencode
-
-The GUI can encode addresses in a QR Code. To build in QR support for the GUI, install `libqrencode`. Skip if not using the GUI or don't want QR code functionality.
-```bash
-pkg install libqrencode
-```
----
 
 #### Notifications
 ###### ZeroMQ
@@ -73,16 +58,10 @@ pkg install python3 databases/py-sqlite3
 
 There are many ways to configure Bitcoin Core, here are a few common examples:
 
-##### Wallet and GUI:
+##### Wallet:
 ```bash
 ./autogen.sh
-./configure --with-gui=yes MAKE=gmake
-```
-
-##### Wallet, No GUI:
-```bash
-./autogen.sh
-./configure --with-gui=no MAKE=gmake
+./configure MAKE=gmake
 ```
 
 ##### No Wallet or GUI

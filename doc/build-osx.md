@@ -65,7 +65,7 @@ git clone https://github.com/bitcoin/bitcoin.git
 
 #### Wallet Dependencies
 
-It is not necessary to build wallet functionality to run `naviod` or  `navio-qt`.
+It is not necessary to build wallet functionality to run `naviod`.
 
 ###### Descriptor Wallet Support
 
@@ -73,31 +73,6 @@ It is not necessary to build wallet functionality to run `naviod` or  `navio-qt`
 
 macOS ships with a useable `sqlite` package, meaning you don't need to
 install anything.
-
-#### GUI Dependencies
-
-###### Qt
-
-Bitcoin Core includes a GUI built with the cross-platform Qt Framework.
-To compile the GUI, we need to install `qt@5`.
-Skip if you don't intend to use the GUI.
-
-``` bash
-brew install qt@5
-```
-
-Note: Building with Qt binaries downloaded from the Qt website is not officially supported.
-See the notes in [#7714](https://github.com/bitcoin/bitcoin/issues/7714).
-
-###### qrencode
-
-The GUI can encode addresses in a QR Code. To build in QR support for the GUI, install `qrencode`.
-Skip if not using the GUI or don't want QR code functionality.
-
-``` bash
-brew install qrencode
-```
----
 
 #### Port Mapping Dependencies
 
@@ -162,25 +137,18 @@ It is required that you have `python` installed.
 
 There are many ways to configure Bitcoin Core, here are a few common examples:
 
-##### Wallet (SQLite) Support, No GUI:
+##### Wallet (SQLite) Support:
 
 ``` bash
 ./autogen.sh
-./configure --with-gui=no
+./configure
 ```
 
-##### Wallet and GUI Support:
+##### No Wallet
 
 ``` bash
 ./autogen.sh
-./configure --with-gui=yes
-```
-
-##### No Wallet or GUI
-
-``` bash
-./autogen.sh
-./configure --without-wallet --with-gui=no
+./configure --without-wallet
 ```
 
 ##### Further Configuration
@@ -213,9 +181,8 @@ make deploy
 ## Running Bitcoin Core
 
 Bitcoin Core should now be available at `./src/naviod`.
-If you compiled support for the GUI, it should be available at `./src/qt/navio-qt`.
 
-The first time you run `naviod` or `navio-qt`, it will start downloading the blockchain.
+The first time you run `naviod`, it will start downloading the blockchain.
 This process could take many hours, or even days on slower than average systems.
 
 By default, blockchain and wallet data files will be stored in:
@@ -246,5 +213,4 @@ tail -f $HOME/Library/Application\ Support/Bitcoin/debug.log
 ./src/naviod -daemon      # Starts the bitcoin daemon.
 ./src/navio-cli --help    # Outputs a list of command-line options.
 ./src/navio-cli help      # Outputs a list of RPC commands when the daemon is running.
-./src/qt/navio-qt -server # Starts the navio-qt server mode, allows navio-cli control
 ```

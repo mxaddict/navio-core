@@ -68,28 +68,6 @@ User-Space, Statically Defined Tracing (USDT) dependencies:
 
     sudo apt install systemtap-sdt-dev
 
-GUI dependencies:
-
-If you want to build navio-qt, make sure that the required packages for Qt development
-are installed. Qt 5 is necessary to build the GUI.
-To build without GUI pass `--without-gui`.
-
-To build with Qt 5 you need the following:
-
-    sudo apt-get install libqt5gui5 libqt5core5a libqt5dbus5 qttools5-dev qttools5-dev-tools
-
-Additionally, to support Wayland protocol for modern desktop environments:
-
-    sudo apt install qtwayland5
-
-libqrencode (optional) can be installed with:
-
-    sudo apt-get install libqrencode-dev
-
-Once these are installed, they will be found by configure and a navio-qt executable will be
-built by default.
-
-
 ### Fedora
 
 #### Dependency Build Instructions
@@ -119,27 +97,6 @@ ZMQ dependencies (provides ZMQ API):
 User-Space, Statically Defined Tracing (USDT) dependencies:
 
     sudo dnf install systemtap-sdt-devel
-
-GUI dependencies:
-
-If you want to build navio-qt, make sure that the required packages for Qt development
-are installed. Qt 5 is necessary to build the GUI.
-To build without GUI pass `--without-gui`.
-
-To build with Qt 5 you need the following:
-
-    sudo dnf install qt5-qttools-devel qt5-qtbase-devel
-
-Additionally, to support Wayland protocol for modern desktop environments:
-
-    sudo dnf install qt5-qtwayland
-
-libqrencode (optional) can be installed with:
-
-    sudo dnf install qrencode-devel
-
-Once these are installed, they will be found by configure and a navio-qt executable will be
-built by default.
 
 ## Dependencies
 

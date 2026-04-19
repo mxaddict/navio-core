@@ -27,7 +27,7 @@ git clone https://github.com/bitcoin/bitcoin.git
 
 #### Wallet Dependencies
 
-It is not necessary to build wallet functionality to run either `naviod` or `navio-qt`.
+It is not necessary to build wallet functionality to run `naviod`.
 
 ###### Descriptor Wallet Support
 
@@ -35,15 +35,6 @@ It is not necessary to build wallet functionality to run either `naviod` or `nav
 
 ``` bash
 pkg_add sqlite3
-```
-
-#### GUI Dependencies
-###### Qt5
-
-Bitcoin Core includes a GUI built with the cross-platform Qt Framework. To compile the GUI, Qt 5 is required.
-
-```bash
-pkg_add qt5
 ```
 
 ## Building Bitcoin Core
@@ -71,10 +62,10 @@ This enables the GUI and descriptor wallet support, assuming `sqlite` and `qt5` 
 ./configure MAKE=gmake
 ```
 
-##### Wallet, No GUI:
+##### Wallet:
 
 ```bash
-./configure --with-gui=no MAKE=gmake
+./configure MAKE=gmake
 ```
 
 ### 2. Compile
