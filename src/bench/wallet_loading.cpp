@@ -36,7 +36,7 @@ static void WalletLoading(benchmark::Bench& bench)
 
     // Setup the wallet
     // Loading the wallet will also create it
-    const uint64_t create_flags = WALLET_FLAG_BLSCT;
+    const uint64_t create_flags = WALLET_FLAG_DESCRIPTORS;
     auto database = CreateMockableWalletDatabase();
     auto wallet = TestLoadWallet(std::move(database), context, create_flags);
 

@@ -19,7 +19,7 @@
 
 using wallet::CWallet;
 using wallet::CreateMockableWalletDatabase;
-using wallet::WALLET_FLAG_BLSCT;
+using wallet::WALLET_FLAG_DESCRIPTORS;
 
 struct TipBlock
 {
@@ -93,8 +93,8 @@ static void WalletCreateTx(benchmark::Bench& bench, const OutputType output_type
     CWallet wallet{test_setup->m_node.chain.get(), "", CreateMockableWalletDatabase()};
     {
         LOCK(wallet.cs_wallet);
-        wallet.SetWalletFlag(WALLET_FLAG_BLSCT);
-        wallet.SetupBLSCTKeyMan();
+        wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+        wallet.SetupDescriptorScriptPubKeyMans();
     }
 
     // Generate destinations
@@ -159,8 +159,8 @@ static void AvailableCoins(benchmark::Bench& bench, const std::vector<OutputType
     CWallet wallet{test_setup->m_node.chain.get(), "", CreateMockableWalletDatabase()};
     {
         LOCK(wallet.cs_wallet);
-        wallet.SetWalletFlag(WALLET_FLAG_BLSCT);
-        wallet.SetupBLSCTKeyMan();
+        wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+        wallet.SetupDescriptorScriptPubKeyMans();
     }
 
     // Generate destinations
