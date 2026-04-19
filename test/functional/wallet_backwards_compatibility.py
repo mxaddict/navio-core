@@ -93,8 +93,7 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
         return node_major >= major
 
     def test_v19_addmultisigaddress(self):
-        if not self.is_bdb_compiled():
-            return
+        return  # BDB removed
         # Specific test for addmultisigaddress using v19
         # See #18075
         self.log.info("Testing 0.19 addmultisigaddress case (#18075)")

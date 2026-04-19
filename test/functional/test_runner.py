@@ -93,7 +93,6 @@ EXTENDED_SCRIPTS = [
     'feature_pruning.py',
     'feature_dbcrash.py',
     'feature_index_prune.py',
-    'wallet_pruning.py --legacy-wallet',
 ]
 
 BASE_SCRIPTS = [
@@ -331,7 +330,6 @@ BASE_SCRIPTS = [
     'wallet_sendall.py --legacy-wallet',
     'wallet_sendall.py --descriptors',
     'wallet_create_tx.py --descriptors',
-    'wallet_inactive_hdchains.py --legacy-wallet',
     'wallet_spend_unconfirmed.py',
     'wallet_rescan_unconfirmed.py --descriptors',
     'p2p_fingerprint.py',

@@ -26,7 +26,6 @@ class InactiveHDChainsTest(BitcoinTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
-        self.skip_if_no_bdb()
         self.skip_if_no_previous_releases()
 
     def setup_nodes(self):

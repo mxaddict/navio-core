@@ -217,8 +217,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # Prefer SQLite unless it isn't available
             if self.is_sqlite_compiled():
                 self.options.descriptors = True
-            elif self.is_bdb_compiled():
-                self.options.descriptors = False
             else:
                 # If neither are compiled, tests requiring a wallet will be skipped and the value of self.options.descriptors won't matter
                 # It still needs to exist and be None in order for tests to work however.
@@ -937,20 +935,12 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         self._requires_wallet = True
         if not self.is_wallet_compiled():
             raise SkipTest("wallet has not been compiled.")
-        if self.options.descriptors:
-            self.skip_if_no_sqlite()
-        else:
-            self.skip_if_no_bdb()
+        self.skip_if_no_sqlite()
 
     def skip_if_no_sqlite(self):
         """Skip the running test if sqlite has not been compiled."""
         if not self.is_sqlite_compiled():
             raise SkipTest("sqlite has not been compiled.")
-
-    def skip_if_no_bdb(self):
-        """Skip the running test if BDB has not been compiled."""
-        if not self.is_bdb_compiled():
-            raise SkipTest("BDB has not been compiled.")
 
     def skip_if_no_wallet_tool(self):
         """Skip the running test if navio-wallet has not been compiled."""
@@ -998,12 +988,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         return self.config["components"].getboolean("ENABLE_WALLET")
 
     def is_specified_wallet_compiled(self):
-        """Checks whether wallet support for the specified type
-           (legacy or descriptor wallet) was compiled."""
-        if self.options.descriptors:
-            return self.is_sqlite_compiled()
-        else:
-            return self.is_bdb_compiled()
+        """Checks whether wallet support for the specified type was compiled."""
+        return self.is_sqlite_compiled()
 
     def is_wallet_tool_compiled(self):
         """Checks whether navio-wallet was compiled."""

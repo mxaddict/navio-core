@@ -462,12 +462,9 @@ int AES256CBCEncrypt::Encrypt(const unsigned char* data, int size, unsigned char
 AES256CBCEncrypt::~AES256CBCEncrypt() {}
 
 namespace wallet {
-struct BerkeleyDatabase;
 struct SQLiteDatabase;
 struct DatabaseOptions;
 struct DatabaseStatus;
-
-std::unique_ptr<BerkeleyDatabase> MakeBerkeleyDatabase(const fs::path& path, const DatabaseOptions& options, DatabaseStatus& status, bilingual_str& error) NOT_IMPL
 
 std::unique_ptr<SQLiteDatabase> MakeSQLiteDatabase(const fs::path& path, const DatabaseOptions& options, DatabaseStatus& status, bilingual_str& error) NOT_IMPL
 
