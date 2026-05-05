@@ -198,3 +198,33 @@ awk -F'\t' '
     for (s in n) printf "%-12s %14.2f %14.2f\n", s, sum_us[s]/n[s], sum_rate[s]/n[s]
   }
 ' "$SUMMARY"
+
+# --------- BLSCT verify breakdown (parses [bench] lines for rangeproof + aggsig) ---------
+echo
+echo "=== BLSCT verify breakdown (means per call, ms) ==="
+{
+  printf "%-12s %12s %12s %12s\n" "scenario" "rangeproof" "aggsig" "wait_async"
+  for s in $SCENARIOS; do
+    awk -v scenario="$s" -v dir="$RESULTS_DIR" -v runs="$RUNS" '
+      BEGIN {
+        for (i = 1; i <= runs; i++) {
+          f = dir "/" scenario "_run" i "_debug.log"
+          while ((getline line < f) > 0) {
+            if (match(line, /rangeproof batch \(([0-9]+) proofs\): ([0-9.]+)ms/, m)) {
+              rp += m[2]; rn++
+            }
+            if (match(line, /\[bench\][[:space:]]+- BLSCT aggregate signatures: ([0-9.]+)ms/, m)) {
+              ag += m[1]; an++
+            }
+            if (match(line, /Wait for async BLSCT agg sig verify: ([0-9.]+)ms/, m)) {
+              wa += m[1]; wn++
+            }
+          }
+          close(f)
+        }
+        if (rn) printf "%-12s %12.3f %12.3f %12.3f\n", scenario, rp/rn, (an?ag/an:0), (wn?wa/wn:0)
+        else printf "%-12s %12s %12s %12s\n", scenario, "n/a", "n/a", "n/a"
+      }
+    '
+  done
+}
