@@ -3520,6 +3520,14 @@ bool Chainstate::ConnectTip(BlockValidationState& state, CBlockIndex* pindexNew,
              Ticks<MillisecondsDouble>(time_6 - time_1),
              Ticks<SecondsDouble>(time_total),
              Ticks<MillisecondsDouble>(time_total) / num_blocks_total);
+    {
+        const double us_block = Ticks<MicrosecondsDouble>(time_6 - time_1);
+        const double us_block_avg = Ticks<MicrosecondsDouble>(time_total) / num_blocks_total;
+        const double total_s = Ticks<SecondsDouble>(time_total);
+        const double blocks_per_s = total_s > 0 ? num_blocks_total / total_s : 0.0;
+        LogPrint(BCLog::BENCH, "[perf] height=%d us/block=%.2f us/block_avg=%.2f blocks/s=%.4f total_blocks=%d total_s=%.2f\n",
+                 pindexNew->nHeight, us_block, us_block_avg, blocks_per_s, num_blocks_total, total_s);
+    }
 
     // If we are the background validation chainstate, check to see if we are done
     // validating the snapshot (i.e. our tip has reached the snapshot's base block).
