@@ -36,6 +36,7 @@ TEST_RPCPORT=18342
 TEST_P2PPORT=18343
 SCENARIOS="neither gmp_only omp_only both"
 CHAIN=test
+FORCE_BUILD=0
 COMMON_CONFIGURE_FLAGS="--disable-bench --disable-tests --disable-fuzz --disable-fuzz-binary --without-gui"
 
 # --------- parse args ---------
@@ -48,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --test-datadir) TEST_DATADIR=$2; shift 2 ;;
     --scenarios) SCENARIOS=$2; shift 2 ;;
     --chain) CHAIN=$2; shift 2 ;;
+    --force-build) FORCE_BUILD=1; shift ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -157,10 +159,14 @@ echo "results: $RESULTS_DIR"
 echo
 
 for s in $SCENARIOS; do
-  echo "=== building $s ==="
-  configure_for_scenario "$s"
-  build_scenario
-  cp src/naviod "$RESULTS_DIR/naviod.$s"
+  if [[ -x "$RESULTS_DIR/naviod.$s" && "$FORCE_BUILD" != "1" ]]; then
+    echo "=== reusing existing $s build at $RESULTS_DIR/naviod.$s (use --force-build to rebuild) ==="
+  else
+    echo "=== building $s ==="
+    configure_for_scenario "$s"
+    build_scenario
+    cp src/naviod "$RESULTS_DIR/naviod.$s"
+  fi
   echo "=== running $s ($RUNS iterations) ==="
   for i in $(seq 1 "$RUNS"); do
     run_one_sync "$s" "$RESULTS_DIR/naviod.$s" "$i"

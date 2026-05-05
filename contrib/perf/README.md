@@ -37,7 +37,15 @@ Results land in `~/navio-perf/results/`.
 
 # subset of scenarios
 ./contrib/perf/run-bench.sh --scenarios "neither gmp_only"
+
+# force rebuild (default reuses existing src/naviod and per-scenario binaries)
+./contrib/perf/run-bench.sh --force-build
 ```
+
+By default, `run-bench.sh` and `bench-mcl-backends.sh` reuse the bootstrap
+`src/naviod` and per-scenario binaries (`$RESULTS_DIR/naviod.<scenario>`) if
+they exist. Pass `--force-build` to rebuild from scratch — useful after
+pulling new code or changing configure flags.
 
 ## Pieces
 

@@ -23,6 +23,7 @@ ADDNODE=""
 USE_TOR=0
 SCENARIOS="neither gmp_only omp_only both"
 RESULTS_DIR="${HOME}/navio-perf/results"
+FORCE_BUILD=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --use-tor) USE_TOR=1; shift ;;
     --scenarios) SCENARIOS=$2; shift 2 ;;
     --results-dir) RESULTS_DIR=$2; shift 2 ;;
+    --force-build) FORCE_BUILD=1; shift ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -62,14 +64,18 @@ echo "  ok"
 echo
 
 # --------- bootstrap naviod (build with all backends so we can use it for source setup) ---------
-echo "=== bootstrap build (with all backends, for source-node setup) ==="
-./autogen.sh >/dev/null 2>&1
-./configure --disable-bench --disable-tests --disable-fuzz --disable-fuzz-binary --without-gui \
-            --with-gmp --enable-openmp >/dev/null
-make -C src/bls clean >/dev/null 2>&1 || true
-make -C src/bls/mcl clean >/dev/null 2>&1 || true
-make >/dev/null
-echo "  ok ($(stat -c%s src/naviod) bytes)"
+if [[ -x src/naviod && "$FORCE_BUILD" != "1" ]]; then
+  echo "=== reusing existing src/naviod (use --force-build to rebuild) ==="
+else
+  echo "=== bootstrap build (with all backends, for source-node setup) ==="
+  ./autogen.sh >/dev/null 2>&1
+  ./configure --disable-bench --disable-tests --disable-fuzz --disable-fuzz-binary --without-gui \
+              --with-gmp --enable-openmp >/dev/null
+  make -C src/bls clean >/dev/null 2>&1 || true
+  make -C src/bls/mcl clean >/dev/null 2>&1 || true
+  make >/dev/null
+  echo "  ok ($(stat -c%s src/naviod) bytes)"
+fi
 echo
 
 # --------- start source node ---------
@@ -96,12 +102,15 @@ echo
 
 # --------- run the benchmark ---------
 echo "=== running $RUNS iterations × ${SCENARIOS} ==="
-"$REPO_ROOT/contrib/perf/bench-mcl-backends.sh" \
-  --source-port "$SOURCE_PORT" \
-  --chain "$BENCH_CHAIN" \
-  --runs "$RUNS" \
-  --scenarios "$SCENARIOS" \
+bench_args=(
+  --source-port "$SOURCE_PORT"
+  --chain "$BENCH_CHAIN"
+  --runs "$RUNS"
+  --scenarios "$SCENARIOS"
   --results-dir "$RESULTS_DIR"
+)
+(( FORCE_BUILD )) && bench_args+=( --force-build )
+"$REPO_ROOT/contrib/perf/bench-mcl-backends.sh" "${bench_args[@]}"
 
 echo
 echo "results dir: $RESULTS_DIR"
