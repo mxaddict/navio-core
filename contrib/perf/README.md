@@ -62,6 +62,9 @@ The end-of-run summary shows:
 - Per-scenario means.
 - Per-scenario BLSCT verify breakdown (rangeproof + aggsig + wait_async).
 
+The summary is printed to stdout and saved to `$RESULTS_DIR/summary.txt`. The
+machine-readable per-run rows are also in `$RESULTS_DIR/summary.tsv`.
+
 ## Why these scenarios
 
 The four points cover the full GMP × OMP product:

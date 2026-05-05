@@ -186,23 +186,28 @@ SUMMARY="$RESULTS_DIR/summary.tsv"
   done
 } > "$SUMMARY"
 
-echo "=== summary (also at $SUMMARY) ==="
-column -t -s $'\t' "$SUMMARY"
-
-echo
-echo "=== means by scenario ==="
-awk -F'\t' '
-  NR>1 && $3 != "NA" { sum_us[$1] += $3; sum_rate[$1] += $4; n[$1]++ }
-  END {
-    printf "%-12s %14s %14s\n", "scenario", "mean_us/block", "mean_blocks/s"
-    for (s in n) printf "%-12s %14.2f %14.2f\n", s, sum_us[s]/n[s], sum_rate[s]/n[s]
-  }
-' "$SUMMARY"
-
-# --------- BLSCT verify breakdown (parses [bench] lines for rangeproof + aggsig) ---------
-echo
-echo "=== BLSCT verify breakdown (means per call, ms) ==="
+REPORT="$RESULTS_DIR/summary.txt"
 {
+  echo "=== run config ==="
+  echo "scenarios: $SCENARIOS"
+  echo "runs/scenario: $RUNS"
+  echo "source: $SOURCE_HOST:$SOURCE_PORT (chain=$CHAIN)"
+  echo "host: $(uname -srm) — $(nproc) CPUs"
+  echo "date: $(date -Iseconds)"
+  echo
+  echo "=== summary (also at $SUMMARY) ==="
+  column -t -s $'\t' "$SUMMARY"
+  echo
+  echo "=== means by scenario ==="
+  awk -F'\t' '
+    NR>1 && $3 != "NA" { sum_us[$1] += $3; sum_rate[$1] += $4; n[$1]++ }
+    END {
+      printf "%-12s %14s %14s\n", "scenario", "mean_us/block", "mean_blocks/s"
+      for (s in n) printf "%-12s %14.2f %14.2f\n", s, sum_us[s]/n[s], sum_rate[s]/n[s]
+    }
+  ' "$SUMMARY"
+  echo
+  echo "=== BLSCT verify breakdown (means per call, ms) ==="
   printf "%-12s %12s %12s %12s\n" "scenario" "rangeproof" "aggsig" "wait_async"
   for s in $SCENARIOS; do
     awk -v scenario="$s" -v dir="$RESULTS_DIR" -v runs="$RUNS" '
@@ -227,4 +232,6 @@ echo "=== BLSCT verify breakdown (means per call, ms) ==="
       }
     '
   done
-}
+} | tee "$REPORT"
+echo
+echo "saved report: $REPORT"
