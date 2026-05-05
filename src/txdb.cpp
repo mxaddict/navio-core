@@ -5,6 +5,7 @@
 
 #include <txdb.h>
 
+#include <blsct/arith/mcl/mcl_g1point.h>
 #include <coins.h>
 #include <dbwrapper.h>
 #include <logging.h>
@@ -41,16 +42,16 @@ namespace {
 
 struct CoinEntry {
     COutPoint* outpoint;
-    uint8_t key;
-    explicit CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN) {}
+    uint8_t key{DB_COIN};
+    explicit CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)) {}
 
     SERIALIZE_METHODS(CoinEntry, obj) { READWRITE(obj.key, obj.outpoint->hash); }
 };
 
 struct TokenDbEntry {
     uint256* tokenId;
-    uint8_t key;
-    explicit TokenDbEntry(const uint256* ptr) : tokenId(const_cast<uint256*>(ptr)), key(DB_TOKEN) {}
+    uint8_t key{DB_TOKEN};
+    explicit TokenDbEntry(const uint256* ptr) : tokenId(const_cast<uint256*>(ptr)) {}
 
     SERIALIZE_METHODS(TokenDbEntry, obj) { READWRITE(obj.key, *(obj.tokenId)); }
 };
@@ -76,6 +77,10 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 
 bool CCoinsViewDB::GetCoin(const COutPoint& outpoint, Coin& coin) const
 {
+    // Coins in LevelDB were subgroup-checked when their creating block was
+    // first received from the network; skip the per-G1-point check here.
+    // Matches the skip applied in ReadBlockFromDisk for block files.
+    MclG1Point::SubgroupCheckSkipScope skip_subgroup_check;
     return m_db->Read(CoinEntry(&outpoint), coin);
 }
 

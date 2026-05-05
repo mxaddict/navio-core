@@ -15,10 +15,6 @@
 #include <vector>
 
 template <typename T>
-OrderedElements<T>::OrderedElements(){};
-template OrderedElements<MclG1Point>::OrderedElements();
-
-template <typename T>
 OrderedElements<T>::OrderedElements(const std::set<T>& set)
 {
     m_set = set;
@@ -73,9 +69,20 @@ uint32_t compress_seed(const uint64_t seed_data[4])
 }
 
 template <typename T>
-Elements<T> OrderedElements<T>::GetElements(const uint256& seed) const
+Elements<T> OrderedElements<T>::GetElements() const
 {
     if (Size() == 0) return Elements<T>();
+
+    std::vector<T> ret;
+    std::copy(m_set.begin(), m_set.end(), std::back_inserter(ret));
+
+    return Elements<T>(ret);
+}
+
+template <typename T>
+Elements<T> OrderedElements<T>::GetElements(const uint256& seed, const size_t& max_size) const
+{
+    if (Size() == 0 || max_size == 0) return Elements<T>();
 
     std::vector<T> ret;
     std::copy(m_set.begin(), m_set.end(), std::back_inserter(ret));
@@ -86,14 +93,16 @@ Elements<T> OrderedElements<T>::GetElements(const uint256& seed) const
 
         XorShift32 rng(compress_seed(seed_data));
         _deterministic_shuffle(ret, rng);
-
-        if (ret.size() > 16) {
-            ret.resize(16);
-        }
     }
 
-    return Elements<T>(ret); // assuming Elements<T> has a vector<T> constructor
+    if (ret.size() > max_size) {
+        ret.resize(max_size);
+    }
+
+    return Elements<T>(ret);
 }
+template Elements<MclG1Point> OrderedElements<MclG1Point>::GetElements() const;
+template Elements<MclG1Point> OrderedElements<MclG1Point>::GetElements(const uint256& seed, const size_t& max_size) const;
 
 template <typename T>
 size_t OrderedElements<T>::Size() const
@@ -182,13 +191,6 @@ template std::string OrderedElements<MclG1Point>::GetString(const uint8_t& radix
 
 
 // Elements
-
-template <typename T>
-Elements<T>::Elements()
-{
-}
-template Elements<MclG1Point>::Elements();
-template Elements<MclScalar>::Elements();
 
 template <typename T>
 Elements<T>::Elements(const std::vector<T>& vec)
@@ -452,6 +454,7 @@ template bool Elements<MclScalar>::operator>=(const MclScalar&) const;
 template <typename T>
 void Elements<T>::operator=(const Elements<T>& rhs)
 {
+    if (this == &rhs) return;
     m_vec.clear();
     for (size_t i = 0; i < rhs.m_vec.size(); ++i) {
         auto copy = T(rhs.m_vec[i]);

@@ -8,7 +8,7 @@
 #include <tinyformat.h>
 
 #include <set>
-#include <stdint.h>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -33,6 +33,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     {"createblsctrawtransaction", 1, "outputs"},
     { "createblsctbalanceproof", 0, "amount" },
     { "fundblsctrawtransaction", 2, "lock_unspents" },
+    { "fundblsctrawtransaction", 3, "fee" },
+    { "fundblsctrawtransaction", 4, "estimate_fee" },
     { "setmocktime", 0, "timestamp" },
     { "mockscheduler", 0, "delta_time" },
     { "utxoupdatepsbt", 1, "descriptors" },
@@ -270,6 +272,9 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "importprivkey", 2, "rescan" },
     { "importaddress", 2, "rescan" },
     { "importaddress", 3, "p2sh" },
+    { "importblsctscript", 0, "script_descriptor" },
+    { "importblsctscript", 1, "rescan" },
+    { "importblsctscript", 2, "start_height" },
     { "importpubkey", 2, "rescan" },
     { "importmempool", 1, "options" },
     { "importmempool", 1, "apply_fee_delta_priority" },
@@ -379,13 +384,13 @@ public:
     /** Return arg_value as UniValue, and first parse it if it is a non-string parameter */
     UniValue ArgToUniValue(std::string_view arg_value, const std::string& method, int param_idx)
     {
-        return members.count({method, param_idx}) > 0 ? Parse(arg_value) : arg_value;
+        return members.contains({method, param_idx}) ? Parse(arg_value) : arg_value;
     }
 
     /** Return arg_value as UniValue, and first parse it if it is a non-string parameter */
     UniValue ArgToUniValue(std::string_view arg_value, const std::string& method, const std::string& param_name)
     {
-        return membersByName.count({method, param_name}) > 0 ? Parse(arg_value) : arg_value;
+        return membersByName.contains({method, param_name}) ? Parse(arg_value) : arg_value;
     }
 };
 

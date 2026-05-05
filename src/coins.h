@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include <functional>
+#include <optional>
 #include <unordered_map>
 
 const char STAKED_COMMITMENT_UNSPENT = 1;
@@ -193,8 +194,8 @@ using TokensMap = std::map<uint256, TokenCacheEntry>;
 class CTokensViewCursor
 {
 public:
-    CTokensViewCursor() {}
-    virtual ~CTokensViewCursor() {}
+    CTokensViewCursor() = default;
+    virtual ~CTokensViewCursor() = default;
 
     virtual bool GetKey(uint256& key) const = 0;
     virtual bool GetValue(blsct::TokenEntry& coin) const = 0;
@@ -210,7 +211,7 @@ class CCoinsViewCursor
 {
 public:
     CCoinsViewCursor(const uint256& hashBlockIn) : hashBlock(hashBlockIn) {}
-    virtual ~CCoinsViewCursor() {}
+    virtual ~CCoinsViewCursor() = default;
 
     virtual bool GetKey(COutPoint& key) const = 0;
     virtual bool GetValue(Coin& coin) const = 0;
@@ -263,7 +264,7 @@ public:
     virtual std::unique_ptr<CTokensViewCursor> CursorTokens() const;
 
     //! As we use CCoinsViews polymorphically, have a virtual destructor
-    virtual ~CCoinsView() {}
+    virtual ~CCoinsView() = default;
 
     //! Estimate database size (0 if not implemented)
     virtual size_t EstimateSize() const { return 0; }
@@ -312,6 +313,10 @@ protected:
     mutable CStakedCommitmentsMap cacheStakedCommitments;
     mutable TokensMap cacheTokens;
 
+    // Memoized result of GetStakedCommitments(). Reset by any mutation of
+    // cacheStakedCommitments or when the base view may have changed (Flush/Sync).
+    mutable std::optional<OrderedElements<MclG1Point>> m_memo_staked_commitments;
+
     /* Cached dynamic memory usage for the inner Coin objects. */
     mutable size_t cachedCoinsUsage{0};
 
@@ -342,6 +347,23 @@ public:
     bool GetAllTokens(TokensMap& tokensMap) const override;
 
     void RemoveStakedCommitment(const MclG1Point& commitment);
+
+    // Invalidate the memoized staked-commitments set. Must be called by any
+    // code that mutates cacheStakedCommitments or the underlying base view.
+    void InvalidateStakedCommitmentsMemo() const { m_memo_staked_commitments.reset(); }
+
+    // Batch-prefetch coins into the cache in parallel. Reads the backing
+    // view concurrently via worker threads (safe for read-only LevelDB)
+    // and then populates cacheCoins serially on the calling thread. Call
+    // before entering code paths that do many sequential GetCoin / HaveCoin
+    // lookups (e.g. Consensus::CheckTxInputs, CCoinsViewCache::HaveInputs)
+    // to hide cold LevelDB latency behind one parallel pass.
+    void BatchPrefetch(const std::vector<COutPoint>& outpoints) const;
+
+    // Internal accessors used by BatchPrefetch's read-only walk. Must stay
+    // const-only (no mutation) since concurrent readers rely on these.
+    const CCoinsMap& CacheCoinsMap() const { return cacheCoins; }
+    const CCoinsView* Base() const { return base; }
 
     /**
      * Check if we have the given utxo already loaded in this cache.

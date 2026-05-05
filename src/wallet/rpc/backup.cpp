@@ -2,6 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <blsct/double_public_key.h>
+#include <blsct/private_key.h>
+#include <blsct/public_key.h>
+#include <blsct/wallet/rpc.h>
 #include <chain.h>
 #include <clientversion.h>
 #include <core_io.h>
@@ -95,6 +99,33 @@ static void RescanWallet(CWallet& wallet, const WalletRescanReserver& reserver, 
     }
 }
 
+static void RescanWalletFromHeight(CWallet& wallet, const WalletRescanReserver& reserver, int start_height, bool update = true)
+{
+    wallet.BlockUntilSyncedToCurrentChain();
+
+    uint256 start_block;
+    {
+        LOCK(wallet.cs_wallet);
+        int tip_height = wallet.GetLastBlockHeight();
+        if (start_height < 0 || start_height > tip_height) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid start_height");
+        }
+
+        CHECK_NONFATAL(wallet.chain().findAncestorByHeight(wallet.GetLastBlockHash(), start_height, FoundBlock().hash(start_block)));
+    }
+
+    CWallet::ScanResult result =
+        wallet.ScanForWalletTransactions(start_block, start_height, /*max_height=*/{}, reserver, /*fUpdate=*/update, /*save_progress=*/false);
+    switch (result.status) {
+    case CWallet::ScanResult::SUCCESS:
+        break;
+    case CWallet::ScanResult::FAILURE:
+        throw JSONRPCError(RPC_MISC_ERROR, "Rescan failed. Potentially corrupted data files.");
+    case CWallet::ScanResult::USER_ABORT:
+        throw JSONRPCError(RPC_MISC_ERROR, "Rescan aborted.");
+    }
+}
+
 static void EnsureBlockDataFromTime(const CWallet& wallet, int64_t timestamp)
 {
     auto& chain{wallet.chain()};
@@ -108,6 +139,19 @@ static void EnsureBlockDataFromTime(const CWallet& wallet, int64_t timestamp)
     uint256 tip_hash{WITH_LOCK(wallet.cs_wallet, return wallet.GetLastBlockHash())};
     if (found && !chain.hasBlocks(tip_hash, height)) {
         throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Pruned blocks from height %d required to import keys. Use RPC call getblockchaininfo to determine your pruned height.", height));
+    }
+}
+
+static void EnsureBlockDataFromHeight(const CWallet& wallet, int start_height)
+{
+    auto& chain{wallet.chain()};
+    if (!chain.havePruned()) {
+        return;
+    }
+
+    uint256 tip_hash{WITH_LOCK(wallet.cs_wallet, return wallet.GetLastBlockHash())};
+    if (!chain.hasBlocks(tip_hash, start_height)) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Can't rescan beyond pruned data. Use RPC call getblockchaininfo to determine your pruned height.");
     }
 }
 
@@ -568,7 +612,7 @@ RPCHelpMan importwallet()
                         fLabel = false;
                     if (vstr[nStr] == "reserve=1")
                         fLabel = false;
-                    if (vstr[nStr].substr(0,6) == "label=") {
+                    if (vstr[nStr].starts_with("label=")) {
                         strLabel = DecodeDumpString(vstr[nStr].substr(6));
                         fLabel = true;
                     }
@@ -896,7 +940,7 @@ RPCHelpMan dumpwallet()
                 file << strprintf("label=%s", strLabel);
             } else if (keyid == seed_id) {
                 file << "hdseed=1";
-            } else if (mapKeyPool.count(keyid)) {
+            } else if (mapKeyPool.contains(keyid)) {
                 file << "reserve=1";
             } else if (metadata.hdKeypath == "s") {
                 file << "inactivehdseed=1";
@@ -954,6 +998,7 @@ enum class ScriptContext
 
 // Analyse the provided scriptPubKey, determining which keys and which redeem scripts from the ImportData struct are needed to spend it, and mark them as used.
 // Returns an error string, or the empty string for success.
+// NOLINTNEXTLINE(misc-no-recursion)
 static std::string RecurseImportData(const CScript& script, ImportData& import_data, const ScriptContext script_ctx)
 {
     // Use Solver to obtain script type and parsed pubkeys or hashes:
@@ -1104,7 +1149,7 @@ static UniValue ProcessImportLegacy(ImportData& import_data, std::map<CKeyID, CP
         }
         CPubKey pubkey = key.GetPubKey();
         CKeyID id = pubkey.GetID();
-        if (pubkey_map.count(id)) {
+        if (pubkey_map.contains(id)) {
             pubkey_map.erase(id);
         }
         privkey_map.emplace(id, key);
@@ -1118,7 +1163,7 @@ static UniValue ProcessImportLegacy(ImportData& import_data, std::map<CKeyID, CP
         auto error = RecurseImportData(script, import_data, ScriptContext::TOP);
 
         // Verify whether the watchonly option corresponds to the availability of private keys.
-        bool spendable = std::all_of(import_data.used_keys.begin(), import_data.used_keys.end(), [&](const std::pair<CKeyID, bool>& used_key){ return privkey_map.count(used_key.first) > 0; });
+        bool spendable = std::all_of(import_data.used_keys.begin(), import_data.used_keys.end(), [&](const std::pair<CKeyID, bool>& used_key){ return privkey_map.contains(used_key.first); });
         if (!watchOnly && !spendable) {
             warnings.push_back("Some private keys are missing, outputs will be considered watchonly. If this is intentional, specify the watchonly flag.");
         }
@@ -1130,7 +1175,7 @@ static UniValue ProcessImportLegacy(ImportData& import_data, std::map<CKeyID, CP
         if (error.empty()) {
             for (const auto& require_key : import_data.used_keys) {
                 if (!require_key.second) continue; // Not a required key
-                if (pubkey_map.count(require_key.first) == 0 && privkey_map.count(require_key.first) == 0) {
+                if (!pubkey_map.contains(require_key.first) && !privkey_map.contains(require_key.first)) {
                     error = "some required keys are missing";
                 }
             }
@@ -1148,7 +1193,7 @@ static UniValue ProcessImportLegacy(ImportData& import_data, std::map<CKeyID, CP
             if (import_data.witnessscript) warnings.push_back("Ignoring witnessscript as this is not a (P2SH-)P2WSH script.");
             for (auto it = privkey_map.begin(); it != privkey_map.end(); ) {
                 auto oldit = it++;
-                if (import_data.used_keys.count(oldit->first) == 0) {
+                if (!import_data.used_keys.contains(oldit->first)) {
                     warnings.push_back("Ignoring irrelevant private key.");
                     privkey_map.erase(oldit);
                 }
@@ -1228,7 +1273,7 @@ static UniValue ProcessImportDescriptor(ImportData& import_data, std::map<CKeyID
         CKeyID id = pubkey.GetID();
 
         // Check if this private key corresponds to a public key from the descriptor
-        if (!pubkey_map.count(id)) {
+        if (!pubkey_map.contains(id)) {
             warnings.push_back("Ignoring irrelevant private key.");
         } else {
             privkey_map.emplace(id, key);
@@ -1241,10 +1286,10 @@ static UniValue ProcessImportDescriptor(ImportData& import_data, std::map<CKeyID
     // perhaps triggering a false warning message. This is consistent with the current wallet IsMine check.
     bool spendable = std::all_of(pubkey_map.begin(), pubkey_map.end(),
         [&](const std::pair<CKeyID, CPubKey>& used_key) {
-            return privkey_map.count(used_key.first) > 0;
+            return privkey_map.contains(used_key.first);
         }) && std::all_of(import_data.key_origins.begin(), import_data.key_origins.end(),
         [&](const std::pair<CKeyID, std::pair<CPubKey, KeyOriginInfo>>& entry) {
-            return privkey_map.count(entry.first) > 0;
+            return privkey_map.contains(entry.first);
         });
     if (!watch_only && !spendable) {
         warnings.push_back("Some private keys are missing, outputs will be considered watchonly. If this is intentional, specify the watchonly flag.");
@@ -1917,7 +1962,7 @@ RPCHelpMan listdescriptors()
         wallet_descriptors.push_back({
             descriptor,
             wallet_descriptor.creation_time,
-            active_spk_mans.count(desc_spk_man) != 0,
+            active_spk_mans.contains(desc_spk_man),
             wallet->IsInternalScriptPubKeyMan(desc_spk_man),
             is_range ? std::optional(std::make_pair(wallet_descriptor.range_start, wallet_descriptor.range_end)) : std::nullopt,
             wallet_descriptor.next_index
@@ -2048,90 +2093,180 @@ RPCHelpMan restorewallet()
     };
 }
 
-// RPCHelpMan importblsctscript()
-// {
-//     return RPCHelpMan{"importblsctscript",
-//                       "\nImport BLSCT scripts for watching. Requires a new wallet backup.\n"
-//                       "The imported scripts will be watch-only and cannot be used to spend.\n"
-//                       "Note: This call can take over an hour to complete if rescan is true, during that time, other rpc calls\n"
-//                       "may report that the imported scripts exist but related transactions are still missing.\n"
-//                       "The rescan parameter can be set to false if the script was never used to create transactions. If it is set to false,\n"
-//                       "but the script was used to create transactions, rescanblockchain needs to be called with the appropriate block range.\n"
-//                       "Note: Use \"getwalletinfo\" to query the scanning progress.\n",
-//                       {
-//                           {"label", RPCArg::Type::STR, RPCArg::Default{""}, "An optional label"},
-//                           {"scripts", RPCArg::Type::ARR, RPCArg::Optional::NO, "Array of scripts to import", {
-//                                                                                                                  {"script", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "A script"},
-//                                                                                                              }},
-//                           {"have_solving_data", RPCArg::Type::BOOL, RPCArg::Default{false}, "Whether the wallet has the data to solve the script"},
-//                           {"apply_label", RPCArg::Type::BOOL, RPCArg::Default{false}, "Whether to apply the label to the imported scripts"},
-//                           {"timestamp", RPCArg::Type::NUM, RPCArg::Default{0}, "Creation time of the script expressed in " + UNIX_EPOCH_TIME + ".\n"
-//                                                                                                                                                "The timestamp of the oldest script will determine how far back blockchain rescans need to begin for missing wallet transactions.\n"
-//                                                                                                                                                "0 can be specified to scan the entire blockchain. Blocks up to 2 hours before the earliest script\n"
-//                                                                                                                                                "creation time of all scripts being imported will be scanned."},
-//                       },
-//                       RPCResult{RPCResult::Type::BOOL, "", "true if successful"},
-//                       RPCExamples{HelpExampleCli("importblsctscript", "\"my label\" '[\"<script1>\", \"<script2>\"]' false true 0")},
-//                       [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
-//                           std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-//                           if (!pwallet) return UniValue::VNULL;
-//                           CWallet& wallet{*pwallet};
+RPCHelpMan importblsctscript()
+{
+    return RPCHelpMan{"importblsctscript",
+                      "\nImport a BLSCT script for watching.\n"
+                      "Supports two modes via the \"type\" field in the script descriptor object:\n"
+                      "  \"atomic_swap\" - reconstruct an HTLC script from pre-agreed swap parameters.\n"
+                      "  \"raw\"         - import an arbitrary script from its hex encoding.\n"
+                      "\nThe wallet will detect matching on-chain outputs during block scanning.\n"
+                      "Note: Use \"getwalletinfo\" to query the scanning progress.\n",
+                      {
+                          {"script_descriptor", RPCArg::Type::OBJ, RPCArg::Optional::NO, "Script descriptor",
+                           {
+                               {"type", RPCArg::Type::STR, RPCArg::Optional::NO, "\"atomic_swap\" or \"raw\""},
+                               {"address_a", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "(atomic_swap) BLSCT address for the hashlock branch"},
+                               {"address_b", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "(atomic_swap) BLSCT address for the timelock branch"},
+                               {"hash", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "(atomic_swap) 32-byte secret hash (64 hex chars)"},
+                               {"locktime", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "(atomic_swap) absolute locktime (height or timestamp)"},
+                               {"blinding_key", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "(atomic_swap) 32-byte blinding key (64 hex chars)"},
+                               {"script", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "(raw) the script hex to import"},
+                           }},
+                          {"rescan", RPCArg::Type::BOOL, RPCArg::Default{true}, "Rescan the blockchain after import"},
+                          {"start_height", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "Block height where the rescan should start. Requires rescan=true."},
+                      },
+                      RPCResult{RPCResult::Type::OBJ, "", "",
+                       {
+                           {RPCResult::Type::BOOL, "success", "true if the script was imported"},
+                           {RPCResult::Type::STR_HEX, "script", "the imported scriptPubKey hex"},
+                       }},
+                      RPCExamples{
+                          HelpExampleCli("importblsctscript",
+                                        "'{\"type\":\"atomic_swap\",\"address_a\":\"...\",\"address_b\":\"...\","
+                                        "\"hash\":\"abcd...\",\"locktime\":200,\"blinding_key\":\"1234...\"}'") +
+                          HelpExampleCli("importblsctscript",
+                                        "'{\"type\":\"raw\",\"script\":\"51\"}'") +
+                          HelpExampleCli("importblsctscript",
+                                        "'{\"type\":\"raw\",\"script\":\"51\"}' true 120") +
+                          HelpExampleRpc("importblsctscript",
+                                        "{\"type\":\"raw\",\"script\":\"51\"}, true, 120")},
+                      [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+                          std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+                          if (!pwallet) return UniValue::VNULL;
 
-//                           // Make sure the results are valid at least up to the most recent block
-//                           // the user could have gotten from another RPC command prior to now
-//                           wallet.BlockUntilSyncedToCurrentChain();
+                          bool fRescan = true;
+                          if (!request.params[1].isNull()) {
+                              fRescan = request.params[1].get_bool();
+                          }
 
-//                           std::string label = request.params[0].isNull() ? "" : request.params[0].get_str();
+                          bool has_start_height = !request.params[2].isNull();
+                          int start_height = 0;
+                          if (has_start_height) {
+                              start_height = request.params[2].getInt<int>();
+                              if (!fRescan) {
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "start_height requires rescan=true");
+                              }
 
-//                           const UniValue& script_pub_keys = request.params[1];
-//                           if (!script_pub_keys.isArray()) {
-//                               throw JSONRPCError(RPC_TYPE_ERROR, "script_pub_keys must be an array");
-//                           }
+                              pwallet->BlockUntilSyncedToCurrentChain();
+                              {
+                                  LOCK(pwallet->cs_wallet);
+                                  int tip_height = pwallet->GetLastBlockHeight();
+                                  if (start_height < 0 || start_height > tip_height) {
+                                      throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid start_height");
+                                  }
+                              }
+                              EnsureBlockDataFromHeight(*pwallet, start_height);
+                          }
 
-//                           std::set<CScript> scripts;
-//                           for (const UniValue& script : script_pub_keys.getValues()) {
-//                               if (!script.isStr()) {
-//                                   throw JSONRPCError(RPC_TYPE_ERROR, "script must be a string");
-//                               }
+                          if (fRescan && !has_start_height && pwallet->chain().havePruned()) {
+                              throw JSONRPCError(RPC_WALLET_ERROR, "Rescan is disabled when blocks are pruned");
+                          }
 
-//                               std::string script_str = script.get_str();
-//                               if (script_str.empty()) {
-//                                   throw JSONRPCError(RPC_INVALID_PARAMETER, "Empty script provided");
-//                               }
+                          WalletRescanReserver reserver(*pwallet);
+                          if (fRescan && !reserver.reserve()) {
+                              throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is currently rescanning. Abort existing rescan or wait.");
+                          }
 
-//                               // Parse the script
-//                               std::vector<unsigned char> script_data;
-//                               if (!IsHex(script_str)) {
-//                                   throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid script: not hex");
-//                               }
+                          const UniValue& desc = request.params[0].get_obj();
+                          std::string type_str = desc["type"].get_str();
 
-//                               try {
-//                                   script_data = ParseHex(script_str);
-//                               } catch (const std::exception& e) {
-//                                   throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid script: " + std::string(e.what()));
-//                               }
+                          CScript script;
+                          std::optional<blsct::PublicKey> watch_only_recovery_nonce;
 
-//                               if (script_data.empty()) {
-//                                   throw JSONRPCError(RPC_INVALID_PARAMETER, "Empty script after parsing");
-//                               }
+                          if (type_str == "atomic_swap") {
+                              for (const auto& field : {"address_a", "address_b", "hash", "locktime", "blinding_key"}) {
+                                  if (!desc.exists(field))
+                                      throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("atomic_swap requires \"%s\"", field));
+                              }
 
-//                               scripts.insert(CScript(script_data.begin(), script_data.end()));
-//                           }
+                              auto parse_address = [](const std::string& addr, const std::string& field) -> blsct::DoublePublicKey {
+                                  CTxDestination dest = DecodeDestination(addr);
+                                  if (!IsValidDestination(dest) || dest.index() != 8)
+                                      throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Invalid BLSCT address for %s: %s", field, addr));
+                                  return std::get<blsct::DoublePublicKey>(dest);
+                              };
 
-//                           if (scripts.empty()) {
-//                               throw JSONRPCError(RPC_INVALID_PARAMETER, "No scripts provided");
-//                           }
+                              blsct::DoublePublicKey address_a = parse_address(desc["address_a"].get_str(), "address_a");
+                              blsct::DoublePublicKey address_b = parse_address(desc["address_b"].get_str(), "address_b");
 
-//                           bool have_solving_data = request.params[2].isNull() ? false : request.params[2].get_bool();
-//                           bool apply_label = request.params[3].isNull() ? false : request.params[3].get_bool();
-//                           int64_t timestamp = request.params[4].isNull() ? 0 : request.params[4].getInt<int64_t>();
+                              std::vector<unsigned char> hash_bytes = ParseHex(desc["hash"].get_str());
+                              if (hash_bytes.size() != 32)
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "hash must be 32 bytes (64 hex chars)");
 
-//                           // Import the scripts
-//                           if (!wallet.importblsctscript(label, scripts, have_solving_data, apply_label, timestamp)) {
-//                               throw JSONRPCError(RPC_WALLET_ERROR, "Error importing BLSCT scripts");
-//                           }
+                              int64_t locktime = desc["locktime"].getInt<int64_t>();
+                              if (locktime < 0 || locktime > std::numeric_limits<uint32_t>::max())
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "locktime must be between 0 and 4294967295");
 
-//                           return true;
-//                       }};
-// }
+                              std::vector<unsigned char> bk_bytes = ParseHex(desc["blinding_key"].get_str());
+                              if (bk_bytes.size() != 32)
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "blinding_key must be 32 bytes (64 hex chars)");
+
+                              Scalar blindingKey(bk_bytes);
+                              MclG1Point address_a_view_key;
+                              if (!address_a.GetViewKey(address_a_view_key))
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "Could not extract view key from address_a");
+                              watch_only_recovery_nonce = blsct::PublicKey(address_a_view_key * blindingKey);
+
+                              auto derive_key = [](const blsct::DoublePublicKey& dpk, const Scalar& bk) -> blsct::PublicKey {
+                                  MclG1Point vk, sk;
+                                  if (!dpk.GetViewKey(vk))
+                                      throw JSONRPCError(RPC_INVALID_PARAMETER, "Could not extract view key from address");
+                                  if (!dpk.GetSpendKey(sk))
+                                      throw JSONRPCError(RPC_INVALID_PARAMETER, "Could not extract spend key from address");
+                                  auto rV = vk * bk;
+                                  return blsct::PublicKey(sk + blsct::PrivateKey(Scalar(rV.GetHashWithSalt(0))).GetPoint());
+                              };
+
+                              auto keyA = derive_key(address_a, blindingKey).GetVch();
+                              auto keyB = derive_key(address_b, blindingKey).GetVch();
+
+                              if (keyA.size() != blsct::PublicKey::SIZE || keyB.size() != blsct::PublicKey::SIZE)
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to derive spending keys");
+
+                              script = blsct::BuildHTLCScript(hash_bytes, keyA, keyB, locktime);
+
+                          } else if (type_str == "raw") {
+                              if (!desc.exists("script"))
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "raw type requires \"script\"");
+
+                              std::string hex = desc["script"].get_str();
+                              if (hex.empty() || !IsHex(hex))
+                                  throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid script hex");
+
+                              std::vector<unsigned char> data = ParseHex(hex);
+                              script = CScript(data.begin(), data.end());
+                          } else {
+                              throw JSONRPCError(RPC_INVALID_PARAMETER, "type must be \"atomic_swap\" or \"raw\"");
+                          }
+
+                          {
+                              LOCK(pwallet->cs_wallet);
+                              auto blsct_km = pwallet->GetOrCreateBLSCTKeyMan();
+                              if (!blsct_km->AddWatchOnly(script, watch_only_recovery_nonce)) {
+                                  throw JSONRPCError(RPC_WALLET_ERROR, "Error adding script to watch-only set");
+                              }
+                              // Importing a watch-only script changes how
+                              // existing transactions are classified by
+                              // IsMine (outputs paying to the new script
+                              // become ISMINE_WATCH_ONLY rather than
+                              // unrecognized), so any cached per-filter
+                              // credit/debit amounts must be recomputed.
+                              pwallet->MarkDirty();
+                          }
+
+                          if (fRescan) {
+                              if (has_start_height) {
+                                  RescanWalletFromHeight(*pwallet, reserver, start_height);
+                              } else {
+                                  RescanWallet(*pwallet, reserver);
+                              }
+                          }
+
+                          UniValue result(UniValue::VOBJ);
+                          result.pushKV("success", true);
+                          result.pushKV("script", HexStr(script));
+                          return result;
+                      }};
+}
 } // namespace wallet

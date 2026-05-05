@@ -310,7 +310,7 @@ static RPCHelpMan setwalletflag()
     std::string flag_str = request.params[0].get_str();
     bool value = request.params[1].isNull() || request.params[1].get_bool();
 
-    if (!WALLET_FLAG_MAP.count(flag_str)) {
+    if (!WALLET_FLAG_MAP.contains(flag_str)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Unknown wallet flag: %s", flag_str));
     }
 
@@ -335,7 +335,7 @@ static RPCHelpMan setwalletflag()
         pwallet->UnsetWalletFlag(flag);
     }
 
-    if (flag && value && WALLET_FLAG_CAVEATS.count(flag)) {
+    if (flag && value && WALLET_FLAG_CAVEATS.contains(flag)) {
         res.pushKV("warnings", WALLET_FLAG_CAVEATS.at(flag));
     }
 
@@ -352,7 +352,7 @@ static RPCHelpMan createwallet()
         {
             {"wallet_name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name for the new wallet. If this is a path, the wallet will be created at the path location."},
             {"disable_private_keys", RPCArg::Type::BOOL, RPCArg::Default{false}, "Disable the possibility of private keys (only watchonlys are possible in this mode)."},
-            {"blank", RPCArg::Type::BOOL, RPCArg::Default{false}, "Create a blank wallet. A blank wallet has no keys or HD seed. One can be set using sethdseed."},
+            {"blank", RPCArg::Type::BOOL, RPCArg::Default{false}, "Create a blank wallet. A blank wallet has no keys or HD seed. One can be set using setblsctseed."},
             {"passphrase", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Encrypt the wallet with this passphrase."},
             {"avoid_reuse", RPCArg::Type::BOOL, RPCArg::Default{false}, "Keep track of coin reuse, and treat dirty and clean coins differently with privacy considerations in mind."},
             {"descriptors", RPCArg::Type::BOOL, RPCArg::Default{true}, "Create a native descriptor wallet. The wallet will use descriptors internally to handle address creation."},
@@ -420,10 +420,16 @@ static RPCHelpMan createwallet()
             if (!request.params[8].isNull() && request.params[8].get_bool()) {
                 flags |= WALLET_FLAG_BLSCT;
                 flags &= ~WALLET_FLAG_DESCRIPTORS;
+                // Output storage mode is default for BLSCT wallets
+                flags |= WALLET_FLAG_BLSCT_OUTPUT_STORAGE;
             }
 
-            if (!request.params[9].isNull() && request.params[9].get_bool()) {
-                flags |= WALLET_FLAG_BLSCT_OUTPUT_STORAGE;
+            if (!request.params[9].isNull()) {
+                if (request.params[9].get_bool()) {
+                    flags |= WALLET_FLAG_BLSCT_OUTPUT_STORAGE;
+                } else {
+                    flags &= ~WALLET_FLAG_BLSCT_OUTPUT_STORAGE;
+                }
             }
 
             // Reject seed/mnemonic when BLSCT is not enabled
@@ -784,10 +790,10 @@ RPCHelpMan simulaterawtransaction()
         // broadcast, we will lose everything in these
         for (const auto& txin : mtx.vin) {
             const auto& outpoint = txin.prevout;
-            if (spent.count(outpoint)) {
+            if (spent.contains(outpoint)) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Transaction(s) are spending the same output more than once");
             }
-            if (new_utxos.count(outpoint)) {
+            if (new_utxos.contains(outpoint)) {
                 changes -= new_utxos.at(outpoint);
                 new_utxos.erase(outpoint);
             } else {
@@ -919,6 +925,7 @@ RPCHelpMan importdescriptors();
 RPCHelpMan listdescriptors();
 RPCHelpMan backupwallet();
 RPCHelpMan restorewallet();
+RPCHelpMan importblsctscript();
 
 // coins
 RPCHelpMan getreceivedbyaddress();
@@ -995,6 +1002,7 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &getbalances},
         {"wallet", &getwalletinfo},
         {"wallet", &importaddress},
+        {"wallet", &importblsctscript},
         {"wallet", &importdescriptors},
         {"wallet", &importmulti},
         {"wallet", &importprivkey},

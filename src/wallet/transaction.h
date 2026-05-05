@@ -193,6 +193,9 @@ public:
     unsigned int nTimeReceived; //!< time received by this node
     int64_t nOrderPos;          //!< position in ordered transaction list
     bool fCoinbase;             //!< whether the output is part of a coinbase transaction
+    bool fBLSCTOutput;          //!< true if the output originally had a BLSCT range proof (survives stripping)
+    bool fStakedCommitment;     //!< true if the output is a staked commitment (survives stripping)
+    uint256 outputHash;         //!< original output hash before range proof stripping
 
     CWalletOutput(CTxOutRef out, const TxState& state) : out(std::move(out)), m_state(state), m_state_spent(TxStateInactive{})
     {
@@ -205,6 +208,15 @@ public:
         nTimeReceived = 0;
         nOrderPos = -1;
         fCoinbase = false;
+        fBLSCTOutput = false;
+        fStakedCommitment = false;
+        outputHash.SetNull();
+    }
+
+    //! Get the original output hash (before any range proof stripping)
+    uint256 GetOutputHash() const
+    {
+        return outputHash.IsNull() ? out->GetHash() : outputHash;
     }
 
     CTxOutRef out;
@@ -224,7 +236,9 @@ public:
 
         serializedHash = TxStateSerializedBlockHash<SyncTxState>(m_state_spent);
         serializedIndex = TxStateSerializedIndex<SyncTxState>(m_state_spent);
-        s << serializedHash << serializedIndex << fCoinbase;
+        s << serializedHash << serializedIndex << fCoinbase << fBLSCTOutput << fStakedCommitment << outputHash;
+        // nOrderPos persisted so chronological listtransactions ordering survives DB reloads.
+        s << nOrderPos;
     }
 
     template <typename Stream>
@@ -238,9 +252,15 @@ public:
 
         m_state = TxStateInterpretSerialized({serialized_block_hash, serializedIndex});
 
-        s >> serialized_block_hash >> serializedIndex >> fCoinbase;
+        s >> serialized_block_hash >> serializedIndex >> fCoinbase >> fBLSCTOutput >> fStakedCommitment >> outputHash;
 
         m_state_spent = SyncTxStateInterpretSerialized({serialized_block_hash, serializedIndex});
+
+        // Backward compatible: older DBs omit nOrderPos; leave at -1 and let
+        // listtransactions fall back to nTimeReceived for ordering.
+        if (!s.eof()) {
+            s >> nOrderPos;
+        }
     }
 
     template <typename T>
@@ -387,7 +407,7 @@ public:
 
     range_proof::RecoveredData<Mcl> GetBLSCTRecoveryData(const uint32_t& forOutput) const
     {
-        if (blsctRecoveryData.find(forOutput) == blsctRecoveryData.end()) {
+        if (!blsctRecoveryData.contains(forOutput)) {
             return range_proof::RecoveredData<Mcl>{0, 0, 0, ""};
         }
         return blsctRecoveryData.at(forOutput);

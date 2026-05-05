@@ -13,7 +13,7 @@ using Scalars = Elements<Scalar>;
 
 namespace blsct {
 
-void TxFactoryBase::AddOutput(const SubAddress& destination, const CAmount& nAmount, std::string sMemo, const TokenId& token_id, const CreateTransactionType& type, const CAmount& minStake, const bool& fSubtractFeeFromAmount, const Scalar& blindingKey)
+void TxFactoryBase::AddOutput(const SubAddress& destination, const CAmount& nAmount, std::string sMemo, const TokenId& token_id, const CreateTransactionType& type, const CAmount& minStake, const bool& fSubtractFeeFromAmount, const Scalar& blindingKey, const CAmount& nBLSCTDefaultFee)
 {
     UnsignedOutput out;
 
@@ -22,16 +22,16 @@ void TxFactoryBase::AddOutput(const SubAddress& destination, const CAmount& nAmo
     CAmount nFee = 0;
 
     if (fSubtractFeeFromAmount) {
-        nFee = GetTransactioOutputWeight(out.out) * BLSCT_DEFAULT_FEE;
+        nFee = GetTransactioOutputWeight(out.out) * nBLSCTDefaultFee;
         out = CreateOutput(destination.GetKeys(), nAmount - nFee, sMemo, token_id, blindingKey, type, minStake);
     };
 
-    if (nAmounts.count(token_id) == 0)
+    if (!nAmounts.contains(token_id))
         nAmounts[token_id] = {0, 0, 0};
 
     nAmounts[token_id].nFromOutputs += nAmount - nFee;
 
-    if (vOutputs.count(token_id) == 0)
+    if (!vOutputs.contains(token_id))
         vOutputs[token_id] = std::vector<UnsignedOutput>();
 
     vOutputs[token_id].push_back(out);
@@ -46,7 +46,7 @@ void TxFactoryBase::AddOutput(const Scalar& tokenKey, const blsct::TokenInfo& to
 
     TokenId token_id{tokenInfo.publicKey.GetHash()};
 
-    if (vOutputs.count(token_id) == 0)
+    if (!vOutputs.contains(token_id))
         vOutputs[token_id] = std::vector<UnsignedOutput>();
 
     vOutputs[token_id].push_back(out);
@@ -62,7 +62,7 @@ void TxFactoryBase::AddOutput(const Scalar& tokenKey, const SubAddress& destinat
 
     TokenId token_id{tokenPublicKey.GetHash()};
 
-    if (vOutputs.count(token_id) == 0)
+    if (!vOutputs.contains(token_id))
         vOutputs[token_id] = std::vector<UnsignedOutput>();
 
     vOutputs[token_id].push_back(out);
@@ -78,14 +78,14 @@ void TxFactoryBase::AddOutput(const Scalar& tokenKey, const SubAddress& destinat
 
     TokenId token_id{tokenPublicKey.GetHash(), nftId};
 
-    if (vOutputs.count(token_id) == 0)
+    if (!vOutputs.contains(token_id))
         vOutputs[token_id] = std::vector<UnsignedOutput>();
 
     vOutputs[token_id].push_back(out);
 }
 
 std::optional<CMutableTransaction>
-TxFactoryBase::BuildTx(const blsct::DoublePublicKey& changeDestination, const CAmount& minStake, const CreateTransactionType& type, const bool& fSubtractedFee)
+TxFactoryBase::BuildTx(const blsct::DoublePublicKey& changeDestination, const CAmount& minStake, const CreateTransactionType& type, const bool& fSubtractedFee, const CAmount& nBLSCTDefaultFee)
 {
     this->tx = CMutableTransaction();
 
@@ -161,28 +161,36 @@ TxFactoryBase::BuildTx(const blsct::DoublePublicKey& changeDestination, const CA
         for (auto& change : mapChange) {
             if (change.second == 0) continue;
 
-            auto changeOutput = CreateOutput(changeDestination, change.second, "Change", change.first, MclScalar::Rand(), NORMAL, minStake);
+            // For unstake txs the "change" output IS the unlocked portion
+            // returning to the user — label it accordingly so clients (and
+            // listtransactions memo field) can distinguish it from ordinary
+            // change.
+            const std::string change_memo = (type == STAKED_COMMITMENT_UNSTAKE)
+                ? std::string{"Stake Unlock"}
+                : std::string{"Change"};
+            auto changeOutput = CreateOutput(changeDestination, change.second, change_memo, change.first, MclScalar::Rand(), NORMAL, minStake);
 
             gammaAcc = gammaAcc - changeOutput.gamma;
 
             tx.vout.push_back(changeOutput.out);
             txSigs.push_back(PrivateKey(changeOutput.blindingKey).Sign(changeOutput.out.GetHash()));
         }
-        if (nAmounts[TokenId()].nFromFee == GetTransactionWeight(CTransaction(tx)) * BLSCT_DEFAULT_FEE) {
-            CTxOut fee_out{nAmounts[TokenId()].nFromFee, CScript(OP_RETURN)};
+        CTxOut fee_out{nAmounts[TokenId()].nFromFee, CScript(OP_RETURN)};
 
-            auto feeKey = blsct::PrivateKey(MclScalar::Rand());
-            fee_out.predicate = blsct::PayFeePredicate(feeKey.GetPublicKey()).GetVch();
+        auto feeKey = blsct::PrivateKey(MclScalar::Rand());
+        fee_out.predicate = blsct::PayFeePredicate(feeKey.GetPublicKey()).GetVch();
 
-            tx.vout.push_back(fee_out);
-            txSigs.push_back(PrivateKey(gammaAcc).SignBalance());
-            txSigs.push_back(PrivateKey(feeKey).SignFee());
+        tx.vout.push_back(fee_out);
+        txSigs.push_back(PrivateKey(gammaAcc).SignBalance());
+        txSigs.push_back(PrivateKey(feeKey).SignFee());
 
-            tx.txSig = Signature::Aggregate(txSigs);
+        tx.txSig = Signature::Aggregate(txSigs);
 
+        const CAmount required_fee = GetTransactionWeight(CTransaction(tx)) * nBLSCTDefaultFee;
+        if (nAmounts[TokenId()].nFromFee == required_fee) {
             return tx;
         }
-        nAmounts[TokenId()].nFromFee = GetTransactionWeight(CTransaction(tx)) * BLSCT_DEFAULT_FEE;
+        nAmounts[TokenId()].nFromFee = required_fee;
     }
 
     return std::nullopt;
@@ -190,12 +198,12 @@ TxFactoryBase::BuildTx(const blsct::DoublePublicKey& changeDestination, const CA
 
 bool TxFactoryBase::AddInput(const CAmount& amount, const MclScalar& gamma, const PrivateKey& spendingKey, const TokenId& token_id, const COutPoint& outpoint, const bool& stakedCommitment, const bool& rbf)
 {
-    if (vInputs.count(token_id) == 0)
+    if (!vInputs.contains(token_id))
         vInputs[token_id] = std::vector<UnsignedInput>();
 
     vInputs[token_id].push_back({CTxIn(outpoint, CScript(), rbf ? MAX_BIP125_RBF_SEQUENCE : CTxIn::SEQUENCE_FINAL), amount, gamma, spendingKey, stakedCommitment});
 
-    if (nAmounts.count(token_id) == 0)
+    if (!nAmounts.contains(token_id))
         nAmounts[token_id] = {0, 0, 0};
 
     nAmounts[token_id].nFromInputs += amount;
@@ -264,7 +272,7 @@ std::optional<CMutableTransaction> TxFactoryBase::CreateTransaction(const std::v
             tx.AddOutput(transactionData.destination, transactionData.nAmount, transactionData.sMemo, transactionData.token_id, transactionData.type);
         }
     }
-    return tx.BuildTx(transactionData.changeDestination, transactionData.minStake, transactionData.type);
+    return tx.BuildTx(transactionData.changeDestination, transactionData.minStake, transactionData.type, /*fSubtractedFee=*/false, transactionData.nBLSCTDefaultFee);
 }
 
 } // namespace blsct

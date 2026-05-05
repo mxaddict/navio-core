@@ -4,6 +4,7 @@
 
 #include <blsct/tokens/predicate_parser.h>
 #include <blsct/wallet/txfactory.h>
+#include <chainparams.h>
 #include <limits>
 
 using T = Mcl;
@@ -25,7 +26,7 @@ bool TxFactory::AddInput(const CCoinsViewCache& cache, const COutPoint& outpoint
     if (!recoveredInfo.is_completed)
         return false;
 
-    if (vInputs.count(coin.out.tokenId) == 0)
+    if (!vInputs.contains(coin.out.tokenId))
         vInputs[coin.out.tokenId] = std::vector<UnsignedInput>();
 
     try {
@@ -39,7 +40,7 @@ bool TxFactory::AddInput(const CCoinsViewCache& cache, const COutPoint& outpoint
         return false;
     }
 
-    if (nAmounts.count(coin.out.tokenId) == 0)
+    if (!nAmounts.contains(coin.out.tokenId))
         nAmounts[coin.out.tokenId] = {0, 0, 0};
 
     nAmounts[coin.out.tokenId].nFromInputs += recoveredInfo.amounts[0].amount;
@@ -77,7 +78,7 @@ bool TxFactory::AddInput(wallet::CWallet* wallet, const COutPoint& outpoint, con
         recoveredInfo = tx->GetBLSCTRecoveryData(outpoint);
     }
 
-    if (vInputs.count(out.tokenId) == 0)
+    if (!vInputs.contains(out.tokenId))
         vInputs[out.tokenId] = std::vector<UnsignedInput>();
 
     try {
@@ -92,7 +93,7 @@ bool TxFactory::AddInput(wallet::CWallet* wallet, const COutPoint& outpoint, con
         return false;
     }
 
-    if (nAmounts.count(out.tokenId) == 0)
+    if (!nAmounts.contains(out.tokenId))
         nAmounts[out.tokenId] = {0, 0, 0};
 
     nAmounts[out.tokenId].nFromInputs += recoveredInfo.amount;
@@ -103,12 +104,21 @@ bool TxFactory::AddInput(wallet::CWallet* wallet, const COutPoint& outpoint, con
 std::optional<CMutableTransaction>
 TxFactory::BuildTx()
 {
-    return TxFactoryBase::BuildTx(std::get<blsct::DoublePublicKey>(km->GetNewDestination(-1).value()));
+    return TxFactoryBase::BuildTx(
+        std::get<blsct::DoublePublicKey>(km->GetNewDestination(-1).value()),
+        /*minStake=*/0,
+        /*type=*/NORMAL,
+        /*fSubtractedFee=*/false,
+        Params().GetConsensus().nBLSCTDefaultFee);
 }
 
 std::optional<CMutableTransaction> TxFactory::CreateTransaction(wallet::CWallet* wallet, blsct::KeyMan* blsct_km, CreateTransactionData transactionData)
 {
     LOCK(wallet->cs_wallet);
+
+    if (transactionData.nBLSCTDefaultFee == ::BLSCT_DEFAULT_FEE) {
+        transactionData.nBLSCTDefaultFee = Params().GetConsensus().nBLSCTDefaultFee;
+    }
 
     std::vector<InputCandidates> inputCandidates;
 
@@ -137,6 +147,7 @@ void TxFactory::AddAvailableCoins(wallet::CWallet* wallet, blsct::KeyMan* blsct_
         CTxOut out;
         range_proof::RecoveredData<Mcl> recoveredInfo;
 
+        bool isStakedCommitment = false;
         if (wallet->IsWalletFlagSet(wallet::WALLET_FLAG_BLSCT_OUTPUT_STORAGE)) {
             auto wout = wallet->GetWalletOutput(output.outpoint);
 
@@ -146,6 +157,7 @@ void TxFactory::AddAvailableCoins(wallet::CWallet* wallet, blsct::KeyMan* blsct_
             out = *(wout->out);
 
             recoveredInfo = wout->blsctRecoveryData;
+            isStakedCommitment = wout->fStakedCommitment;
         } else {
             auto tx = wallet->GetWalletTxFromOutpoint(output.outpoint);
 
@@ -162,15 +174,16 @@ void TxFactory::AddAvailableCoins(wallet::CWallet* wallet, blsct::KeyMan* blsct_
             out = *txout_iter;
 
             recoveredInfo = tx->GetBLSCTRecoveryData(output.outpoint);
+            isStakedCommitment = out.IsStakedCommitment();
         }
-        auto value = out.HasBLSCTRangeProof() ? recoveredInfo.amount : out.nValue;
+        auto value = (out.HasBLSCTRangeProof() || wallet->IsWalletFlagSet(wallet::WALLET_FLAG_BLSCT_OUTPUT_STORAGE)) ? recoveredInfo.amount : out.nValue;
 
         try {
             blsct::PrivateKey spending_key;
             if (!blsct_km->GetSpendingKeyForOutputWithCache(out, spending_key)) {
                 continue;
             }
-            inputCandidates.push_back({value, recoveredInfo.gamma, spending_key, out.tokenId, COutPoint(output.outpoint.hash), out.IsStakedCommitment()});
+            inputCandidates.push_back({value, recoveredInfo.gamma, spending_key, out.tokenId, COutPoint(output.outpoint.hash), isStakedCommitment});
         } catch (const std::exception& e) {
             LogPrintf("Error adding input: %s\n", e.what());
             continue;
