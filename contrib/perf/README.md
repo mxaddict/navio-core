@@ -4,6 +4,25 @@ Scripts to compare GMP vs OMP variants of the `mcl` BLS arithmetic backend
 on a navio block sync workload, with network factored out (loopback source
 node).
 
+## Pre-reqs
+
+**Linux (Debian/Ubuntu):**
+```sh
+sudo apt install build-essential autoconf automake libtool pkg-config \
+                 libgmp-dev libomp-dev
+```
+
+**macOS:** install build tools via Homebrew, then build the navio `depends/`
+toolchain (gives you libgmp, libomp, boost, sqlite, etc.):
+```sh
+brew install autoconf automake libtool pkg-config
+make -C depends NO_QT=1
+```
+
+`run-bench.sh` auto-detects the depends prefix at `depends/$(./depends/config.guess)`
+and feeds its `config.site` to `./configure`, so you don't need to set
+`CONFIG_SITE` yourself.
+
 ## Quick start (fresh machine)
 
 ```sh

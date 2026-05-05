@@ -46,22 +46,65 @@ cd "$REPO_ROOT"
 # --------- system dep check ---------
 echo "=== system dep check ==="
 missing=()
-for cmd in autoconf automake libtoolize make gcc g++ pkg-config; do
+for cmd in autoconf automake make pkg-config; do
   command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
-# headers / pkgconf — avoid hard-failing if not strictly needed
-if ! pkg-config --exists gmp 2>/dev/null && ! [[ -f /usr/include/gmp.h ]]; then
-  echo "  warning: libgmp dev headers not found — gmp_only/both scenarios will fail to build"
-fi
-if ! [[ -f /usr/include/omp.h || -f /usr/lib/llvm*/include/omp.h ]] && ! pkg-config --exists openmp 2>/dev/null; then
-  echo "  warning: omp.h not found — omp_only/both scenarios may fail to build"
-fi
+# libtool: linux=libtoolize, macOS=glibtoolize (homebrew)
+command -v libtoolize >/dev/null || command -v glibtoolize >/dev/null || missing+=("libtoolize/glibtoolize")
+# C++ compiler: gcc/g++ on linux, clang on macOS (Apple Clang or homebrew)
+command -v g++ >/dev/null || command -v clang++ >/dev/null || missing+=("g++/clang++")
+
+# gmp: check common locations (linux + homebrew on apple silicon and intel)
+gmp_found=0
+for p in /usr/include/gmp.h /usr/local/include/gmp.h /opt/homebrew/include/gmp.h \
+         /opt/homebrew/opt/gmp/include/gmp.h /usr/local/opt/gmp/include/gmp.h; do
+  [[ -f "$p" ]] && { gmp_found=1; break; }
+done
+pkg-config --exists gmp 2>/dev/null && gmp_found=1
+# also count a depends-built gmp under the repo
+ls "$REPO_ROOT"/depends/*/include/gmp.h >/dev/null 2>&1 && gmp_found=1
+(( gmp_found )) || echo "  warning: libgmp dev headers not found — gmp_only/both scenarios will fail to build"
+
+# libomp: check common locations + homebrew keg-only paths + depends
+omp_found=0
+for p in /usr/include/omp.h /usr/lib/llvm*/include/omp.h \
+         /opt/homebrew/include/omp.h /opt/homebrew/opt/libomp/include/omp.h \
+         /usr/local/include/omp.h /usr/local/opt/libomp/include/omp.h; do
+  ls $p >/dev/null 2>&1 && { omp_found=1; break; }
+done
+ls "$REPO_ROOT"/depends/*/include/omp.h >/dev/null 2>&1 && omp_found=1
+(( omp_found )) || echo "  warning: omp.h not found — omp_only/both scenarios may fail to build (macOS: 'brew install libomp' or build via depends)"
+
 if (( ${#missing[@]} )); then
   echo "  missing required tools: ${missing[*]}" >&2
+  echo "  macOS: 'brew install autoconf automake libtool pkg-config'" >&2
+  echo "  debian/ubuntu: 'apt install build-essential autoconf automake libtool pkg-config'" >&2
   exit 2
 fi
 echo "  ok"
 echo
+
+# --------- detect depends-built toolchain (typical macOS setup) ---------
+DEPENDS_PREFIX=""
+DEPENDS_HOST=""
+if [[ -x depends/config.guess ]]; then
+  DEPENDS_HOST=$(./depends/config.guess 2>/dev/null || true)
+  if [[ -n "$DEPENDS_HOST" && -d "depends/$DEPENDS_HOST" && -f "depends/$DEPENDS_HOST/share/config.site" ]]; then
+    DEPENDS_PREFIX="$REPO_ROOT/depends/$DEPENDS_HOST"
+    echo "=== using depends prefix: $DEPENDS_PREFIX ==="
+    echo
+  fi
+fi
+
+# Helper to invoke configure with the depends config.site if available
+do_configure() {
+  if [[ -n "$DEPENDS_PREFIX" ]]; then
+    CONFIG_SITE="$DEPENDS_PREFIX/share/config.site" ./configure "$@" >/dev/null
+  else
+    ./configure "$@" >/dev/null
+  fi
+}
+export DEPENDS_PREFIX
 
 # --------- bootstrap naviod (build with all backends so we can use it for source setup) ---------
 if [[ -x src/naviod && "$FORCE_BUILD" != "1" ]]; then
@@ -69,8 +112,8 @@ if [[ -x src/naviod && "$FORCE_BUILD" != "1" ]]; then
 else
   echo "=== bootstrap build (with all backends, for source-node setup) ==="
   ./autogen.sh >/dev/null 2>&1
-  ./configure --disable-bench --disable-tests --disable-fuzz --disable-fuzz-binary --without-gui \
-              --with-gmp --enable-openmp >/dev/null
+  do_configure --disable-bench --disable-tests --disable-fuzz --disable-fuzz-binary --without-gui \
+               --with-gmp --enable-openmp
   make -C src/bls clean >/dev/null 2>&1 || true
   make -C src/bls/mcl clean >/dev/null 2>&1 || true
   make >/dev/null

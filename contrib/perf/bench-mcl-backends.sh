@@ -95,7 +95,12 @@ configure_for_scenario() {
     *) echo "unknown scenario: $s" >&2; exit 2 ;;
   esac
   ./autogen.sh >/dev/null 2>&1
-  ./configure $COMMON_CONFIGURE_FLAGS $flags >/dev/null
+  # Use depends-built config.site if a parent script (run-bench.sh) detected one.
+  if [[ -n "${DEPENDS_PREFIX:-}" && -f "$DEPENDS_PREFIX/share/config.site" ]]; then
+    CONFIG_SITE="$DEPENDS_PREFIX/share/config.site" ./configure $COMMON_CONFIGURE_FLAGS $flags >/dev/null
+  else
+    ./configure $COMMON_CONFIGURE_FLAGS $flags >/dev/null
+  fi
 }
 
 build_scenario() {
