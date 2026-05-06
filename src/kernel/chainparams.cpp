@@ -652,20 +652,24 @@ static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits
             consensus.nPePoSMinStakeAmount = 100 * COIN;
             consensus.nBLSCTDefaultFee = BLSCT_DEFAULT_FEE;
             consensus.nStakedCommitmentLimit = 16;
-            consensus.nLastPOWHeight = 25000;
+            // bench-tuned: small PoW window so we can bootstrap stake commitments
+            // (need 100 blocks of coinbase maturity, plus headroom for funding two
+            // wallets and confirming stakelocks), and 1s PoS spacing with no
+            // retargeting so the staker mints blocks as fast as the prover can run.
+            consensus.nLastPOWHeight = 300;
             consensus.MinBIP9WarningHeight = 0;
             consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
             consensus.posLimit = uint256S("0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
             consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
             consensus.nPowTargetSpacing = 10 * 60;
             consensus.nPosTargetTimespan = 30 * 60;
-            consensus.nPosTargetSpacing = 1 * 60;
-            consensus.nBLSCTBlockReward = 2 * COIN * (consensus.nPosTargetSpacing / 30);
+            consensus.nPosTargetSpacing = 1;
+            consensus.nBLSCTBlockReward = 2 * COIN;
             consensus.nBLSCTFirstBlockReward = 75000000 * COIN;
             consensus.nModifierInterval = 10 * 60;
             consensus.fPowAllowMinDifficultyBlocks = true;
             consensus.fPowNoRetargeting = true;
-            consensus.fPosNoRetargeting = false;
+            consensus.fPosNoRetargeting = true;
             consensus.nRuleChangeActivationThreshold = 108; // 75% for testchains
             consensus.nMinerConfirmationWindow = 144;       // Faster than normal for regtest (144 instead of 2016)
 
