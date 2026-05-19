@@ -33,6 +33,12 @@ on:
   push:
     branches: [master]
     tags: ['v*']
+  # Manual trigger so the workflow can be validated from a feature branch
+  # (e.g. feat/guix-cmake-port) before being relied on for master/tag
+  # publishes. Manual runs upload artifacts as workflow-run artifacts only
+  # — the publish job is gated to refs/heads/master and refs/tags/v* so a
+  # workflow_dispatch never creates a GH release.
+  workflow_dispatch:
 
 # Only one release run at a time per ref to avoid races with the
 # latest-master delete/recreate dance.
