@@ -1,0 +1,237 @@
+# Copyright (c) 2024-present The Navio Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+# Reproducible build CI via Guix.
+#
+# Replaces the prior:
+#   - .github/workflows/release.yml  (hosted-runner CMake build, unsigned, not
+#     reproducible; only x86_64-linux-gnu + arm64-apple-darwin).
+#   - .github/workflows/nightly-build.yml  (external navio-builder repo, daily
+#     cron, separate from navio-core source).
+# Both produced "an artifact" but neither was a reproducible build; both
+# carried the warning "unsigned builder-built artifacts; not for production".
+#
+# Triggers:
+#   - push to master       -> rolling "latest-master" prerelease (tag deleted
+#     and recreated each push so the URL is stable)
+#   - push to a v* tag     -> tagged GitHub release with auto-generated notes
+#
+# Scope (first iteration):
+#   - Linux HOSTS only (x86_64, arm, aarch64, riscv64, powerpc64, powerpc64le).
+#   - Windows + Darwin HOSTS are gated off in contrib/guix/libexec/build.sh
+#     until cmake/module/Maintenance.cmake (add_windows_deploy_target,
+#     add_macos_deploy_target, setup_split_debug_script) and
+#     contrib/guix/security-check.py + symbol-check.py are restored from
+#     upstream. Follow-up PR.
+#   - Outputs: one ${DISTNAME}-${HOST}.tar.gz per HOST. No -debug.tar.gz yet
+#     (depends on setup_split_debug_script). No codesigning tarballs.
+
+name: Release (guix)
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+
+# Only one release run at a time per ref to avoid races with the
+# latest-master delete/recreate dance.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Guix build ${{ matrix.host }}
+    runs-on: ubuntu-24.04
+    # Cold cache: guix install + bootstrap + depends + build can take 2-3 h
+    # per HOST. Warm cache: ~30 min. 360 min (6 h) is the hosted-runner cap.
+    timeout-minutes: 360
+
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - x86_64-linux-gnu
+          - aarch64-linux-gnu
+          - arm-linux-gnueabihf
+          - riscv64-linux-gnu
+          - powerpc64-linux-gnu
+          - powerpc64le-linux-gnu
+
+    steps:
+      - name: Free disk space
+        # The guix store grows to 20-40 GB on cold runs. Reclaim ~25 GB by
+        # purging GHA's preinstalled SDKs (dotnet, android, ghc, codeql,
+        # boost) which guix does not need.
+        run: |
+          set -x
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost 2>/dev/null || true
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # git_head_version() in contrib/shell/git-utils.bash needs the
+          # tag history to compute DISTNAME deterministically on tag pushes.
+          fetch-depth: 0
+
+      - name: Determine version (for output paths)
+        id: version
+        shell: bash
+        run: |
+          # Mirrors prelude.bash's git_head_version: exact tag (sans 'v') or
+          # 12-char short sha. Used here only for naming the upload artifact.
+          if recent_tag="$(git describe --exact-match HEAD 2>/dev/null)"; then
+            version="${recent_tag#v}"
+          else
+            version="$(git rev-parse --short=12 HEAD)"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Install guix
+        # ubuntu-24.04 ships guix 1.4.x; sufficient for contrib/guix to
+        # bootstrap the rest via the time-machine pin in guix-build.
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends guix
+          guix --version
+          # Wait for guix-daemon (installed as a systemd service) to be up.
+          sudo systemctl enable --now guix-daemon
+          sudo systemctl status guix-daemon --no-pager --lines 0 || true
+
+      - name: Cache depends SOURCES_PATH
+        # Cache the raw source downloads (the bandwidth-heavy bit). Keyed on
+        # depends/packages so adding a package busts the cache; lighter
+        # depends/ edits still restore.
+        uses: actions/cache@v5
+        with:
+          path: ~/depends-sources
+          key: guix-sources-${{ hashFiles('depends/packages/*.mk', 'depends/Makefile') }}
+          restore-keys: |
+            guix-sources-
+
+      - name: Cache depends BASE_CACHE
+        # Cache the built depends prefixes per HOST (the CPU-heavy bit).
+        # Keyed on depends/ and the manifest so a manifest bump or depends
+        # change rebuilds.
+        uses: actions/cache@v5
+        with:
+          path: ~/depends-cache
+          key: guix-base-${{ matrix.host }}-${{ hashFiles('depends/**', 'contrib/guix/manifest.scm') }}
+          restore-keys: |
+            guix-base-${{ matrix.host }}-
+
+      - name: Run guix build
+        env:
+          HOSTS: ${{ matrix.host }}
+          SOURCES_PATH: ${{ github.workspace }}/../depends-sources
+          BASE_CACHE: ${{ github.workspace }}/../depends-cache
+          # MAX_JOBS=2 keeps memory in budget on the 16 GB runner during the
+          # parallel depends build.
+          MAX_JOBS: '2'
+          # Suppress the interactive "do you want to download GCC bootstrap"
+          # prompt that prelude.bash emits.
+          ADDITIONAL_GUIX_TIMEMACHINE_FLAGS: ''
+        run: |
+          # guix-build sources contrib/shell/realpath.bash + git-utils.bash,
+          # so the working directory must be the repo root.
+          ./contrib/guix/guix-build
+
+      - name: Collect output artifacts
+        id: collect
+        shell: bash
+        run: |
+          set -x
+          # guix-build places per-HOST outputs under
+          # ${PWD}/guix-build-${VERSION}/output/${HOST}/
+          out_dir=$(echo guix-build-*/output/${{ matrix.host }})
+          test -d "${out_dir}" || { echo "Missing output dir: ${out_dir}"; ls -la guix-build-*/output/ 2>/dev/null; exit 1; }
+          mkdir -p "${RUNNER_TEMP}/artifacts"
+          cp -av "${out_dir}/." "${RUNNER_TEMP}/artifacts/"
+          ls -la "${RUNNER_TEMP}/artifacts/"
+
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: guix-${{ steps.version.outputs.version }}-${{ matrix.host }}
+          path: ${{ runner.temp }}/artifacts/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/artifacts
+          merge-multiple: true
+
+      - name: Aggregate SHA256SUMS
+        shell: bash
+        run: |
+          cd "${RUNNER_TEMP}/artifacts"
+          # Re-emit SHA256SUMS so it's authoritative across all HOSTS, not
+          # one per build job. Discard any per-job SHA256SUMS fragments.
+          rm -f SHA256SUMS
+          shopt -s nullglob
+          archives=( *.tar.gz )
+          if [ ${#archives[@]} -eq 0 ]; then
+            echo "No archives downloaded"; ls -la; exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS
+          cat SHA256SUMS
+          ls -la
+
+      - name: Publish rolling latest-master prerelease
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag=latest-master
+          short=$(git rev-parse --short HEAD)
+          title="Latest master (${short})"
+          notes="Rolling reproducible Guix build of master (${short}). Linux HOSTS only — Windows and macOS will land once the in-tree deploy infrastructure does. Not for production releases; tagged releases at refs/tags/v* are the supported channel."
+
+          # Delete prior rolling release + tag (best-effort: ignore missing).
+          gh release delete "${tag}" --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+
+          gh release create "${tag}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "${title}" \
+            --notes "${notes}" \
+            --prerelease \
+            "${RUNNER_TEMP}"/artifacts/*
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release create "${tag}" \
+            --repo "${{ github.repository }}" \
+            --title "${tag}" \
+            --generate-notes \
+            --verify-tag \
+            "${RUNNER_TEMP}"/artifacts/*
