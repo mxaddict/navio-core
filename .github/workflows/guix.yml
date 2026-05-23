@@ -136,9 +136,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.config/guix
-          key: guix-profile-${{ hashFiles('contrib/guix/manifest.scm') }}
+          key: guix-profile-v2-${{ hashFiles('contrib/guix/manifest.scm') }}
           restore-keys: |
-            guix-profile-
+            guix-profile-v2-
 
       - name: Pull current guix
         # Refresh guix (and its guile-gnutls) into the user profile. apt's
@@ -190,9 +190,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/depends-sources
-          key: guix-sources-${{ hashFiles('depends/packages/*.mk', 'depends/Makefile') }}
+          key: guix-sources-v2-${{ hashFiles('depends/packages/*.mk', 'depends/Makefile') }}
           restore-keys: |
-            guix-sources-
+            guix-sources-v2-
 
       - name: Cache depends BASE_CACHE
         # Cache the built depends prefixes per HOST (the CPU-heavy bit).
@@ -201,9 +201,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/depends-cache
-          key: guix-base-${{ matrix.host }}-${{ hashFiles('depends/**', 'contrib/guix/manifest.scm') }}
+          key: guix-base-v2-${{ matrix.host }}-${{ hashFiles('depends/**', 'contrib/guix/manifest.scm') }}
           restore-keys: |
-            guix-base-${{ matrix.host }}-
+            guix-base-v2-${{ matrix.host }}-
 
       - name: Run guix build
         env:
