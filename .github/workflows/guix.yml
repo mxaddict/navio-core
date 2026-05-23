@@ -60,13 +60,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Common 64-bit Linux targets only. 32-bit arm, riscv64, and the
+        # two powerpc64 variants are too niche to spend CI minutes on by
+        # default; add back individually if a release needs them.
         host:
           - x86_64-linux-gnu
           - aarch64-linux-gnu
-          - arm-linux-gnueabihf
-          - riscv64-linux-gnu
-          - powerpc64-linux-gnu
-          - powerpc64le-linux-gnu
 
     steps:
       - name: Free disk space
