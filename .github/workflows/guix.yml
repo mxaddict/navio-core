@@ -160,7 +160,21 @@ jobs:
         run: |
           # guix-build sources contrib/shell/realpath.bash + git-utils.bash,
           # so the working directory must be the repo root.
-          ./contrib/guix/guix-build
+          #
+          # Retry on transient `guix substitute` TLS / network failures
+          # against bordeaux.guix.gnu.org / ci.guix.gnu.org. Guix is
+          # incremental: previously-built derivations stay in /gnu/store,
+          # depends sources cache survives via SOURCES_PATH, so a retry
+          # picks up where the failed attempt left off.
+          for attempt in 1 2 3; do
+            if ./contrib/guix/guix-build; then
+              exit 0
+            fi
+            echo "guix-build attempt ${attempt} failed; sleeping 30s then retrying..."
+            sleep 30
+          done
+          echo "guix-build failed after 3 attempts"
+          exit 1
 
       - name: Collect output artifacts
         id: collect
