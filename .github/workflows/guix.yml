@@ -103,6 +103,16 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Enable unprivileged user namespaces
+        # ubuntu-24.04 ships an AppArmor profile that restricts unprivileged
+        # user namespaces by default, so `guix shell --container` (used
+        # internally by guix-build for build isolation) fails with
+        # `mount: mount "none" on "/tmp/guix-directory.*": Permission denied`.
+        # Disable the restriction sysctl-wide for the duration of the run.
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
+
       - name: Install guix
         # ubuntu-24.04 ships guix 1.4.x; sufficient for contrib/guix to
         # bootstrap the rest via the time-machine pin in guix-build.
