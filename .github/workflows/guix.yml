@@ -154,6 +154,37 @@ jobs:
           echo "${HOME}/.config/guix/current/bin" >> "$GITHUB_PATH"
           "${HOME}/.config/guix/current/bin/guix" --version
 
+      - name: Swap guix-daemon to pulled version
+        # apt's guix 1.4 guix-daemon evaluates derivations using its own (old)
+        # bag of fixes. Pinning the CLI to a new guix via `guix pull` isn't
+        # enough — the daemon also needs to match, otherwise depends-build
+        # cross-tools hit toolchain bugs like
+        # `bits/local_lim.h: linux/limits.h: No such file or directory`
+        # (missing kernel-headers handling in the old daemon's environment
+        # setup). Replace the systemd unit with one that runs the pulled
+        # guix-daemon while reusing apt's /var/guix store and guixbuilder
+        # build users.
+        run: |
+          sudo systemctl stop guix-daemon
+          sudo tee /etc/systemd/system/guix-daemon.service > /dev/null <<EOF
+          [Unit]
+          Description=Build daemon for GNU Guix (pulled)
+          [Service]
+          ExecStart=${HOME}/.config/guix/current/bin/guix-daemon --build-users-group=guixbuild
+          Environment='GUIX_LOCPATH=/var/guix/profiles/per-user/root/guix-profile/lib/locale'
+          Environment=LC_ALL=en_US.utf8
+          RemainAfterExit=yes
+          StandardOutput=journal
+          StandardError=journal
+          TaskMax=8192
+          LimitNOFILE=1048576
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl start guix-daemon
+          sudo systemctl status guix-daemon --no-pager --lines 5 || true
+
       - name: Cache depends SOURCES_PATH
         # Cache the raw source downloads (the bandwidth-heavy bit). Keyed on
         # depends/packages so adding a package busts the cache; lighter
