@@ -113,6 +113,36 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
 
+      - name: Prefer IPv4 for guix substitute fetches
+        # GHA azure egress IPv6 to ci.guix.gnu.org / bordeaux.guix.gnu.org
+        # routes intermittently / has TLS issues -- `guix substitute` fails
+        # with "TLS error in procedure 'write_to_session_record_port':
+        # Error in the push function." even after 3 retries. The same
+        # servers respond fine over IPv4 from the same hosts. Patch gai.conf
+        # to bump IPv4-mapped addresses above native IPv6 so getaddrinfo
+        # returns IPv4 first.
+        run: |
+          sudo sed -i 's|^#precedence ::ffff:0:0/96  100|precedence ::ffff:0:0/96  100|' /etc/gai.conf || true
+          if ! grep -q '^precedence ::ffff:0:0/96  100' /etc/gai.conf; then
+            echo 'precedence ::ffff:0:0/96  100' | sudo tee -a /etc/gai.conf
+          fi
+          grep -E '^precedence' /etc/gai.conf || true
+
+      - name: Diagnose substitute server reachability
+        # Capture DNS + IPv4/IPv6 reachability + TLS handshake details so a
+        # repeated failure has actionable signal. Non-fatal.
+        run: |
+          set +e
+          for host in ci.guix.gnu.org bordeaux.guix.gnu.org; do
+            echo "=== ${host} ==="
+            echo "--- A: ---";   getent ahostsv4 "${host}" | head -3
+            echo "--- AAAA: ---"; getent ahostsv6 "${host}" | head -3
+            echo "--- curl -4: ---"; curl -sI --max-time 20 -4 "https://${host}/" | head -3
+            echo "--- curl -6: ---"; curl -sI --max-time 20 -6 "https://${host}/" | head -3
+            echo "--- openssl s_client: ---"; (echo; echo Q) | openssl s_client -connect "${host}:443" -servername "${host}" -brief 2>&1 | head -10
+            echo
+          done
+
       - name: Install guix
         # ubuntu-24.04 ships guix 1.4.x; sufficient for contrib/guix to
         # bootstrap the rest via the time-machine pin in guix-build.
