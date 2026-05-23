@@ -64,6 +64,12 @@ store_path() {
 # Set environment variables to point the NATIVE toolchain to the right
 # includes/libs
 NATIVE_GCC="$(store_path gcc-toolchain)"
+# navio-specific: depends/gmp host helpers (gen-bases, gen-fac, ...)
+# compile glibc's bits/local_lim.h which includes <linux/limits.h>.
+# After the `unset C_INCLUDE_PATH` below those headers fall off the
+# default search path, so re-inject them via CPPFLAGS using the
+# linux-libre-headers store path materialized by the manifest.
+NATIVE_KERNEL="$(store_path linux-libre-headers)"
 
 unset LIBRARY_PATH
 unset CPATH
@@ -71,6 +77,9 @@ unset C_INCLUDE_PATH
 unset CPLUS_INCLUDE_PATH
 unset OBJC_INCLUDE_PATH
 unset OBJCPLUS_INCLUDE_PATH
+
+# navio-specific: see NATIVE_KERNEL note above.
+export CPPFLAGS="-isystem ${NATIVE_KERNEL}/include"
 
 # Set native toolchain
 build_CC="${NATIVE_GCC}/bin/gcc -isystem ${NATIVE_GCC}/include"

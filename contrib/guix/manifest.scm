@@ -510,6 +510,15 @@ inspecting signatures in Mach-O binaries.")
         ;; Native GCC 10 toolchain
         gcc-toolchain-10
         (list gcc-toolchain-10 "static")
+        ;; Kernel headers for native depends helpers. Upstream Bitcoin Core
+        ;; does not need this because none of its native helper compiles
+        ;; pull in glibc's bits/local_lim.h (which references
+        ;; <linux/limits.h>). Navio's depends/gmp builds gen-bases/gen-fac
+        ;; etc. as host binaries that DO hit that include chain, and
+        ;; libexec/build.sh `unset C_INCLUDE_PATH` strips the guix-shell
+        ;; default include path. Adding linux-libre-headers to the manifest
+        ;; gives build.sh a stable store path it can re-inject via CPPFLAGS.
+        linux-libre-headers-6.1
         ;; Scripting
         python-minimal ;; (3.10)
         perl ;; for LLVM standalone OpenMP (depends libomp), CMake FindPerl
