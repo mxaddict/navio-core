@@ -236,6 +236,14 @@ ifneq ($(host),$(build))
 $(1)_cmake += -DCMAKE_SYSTEM_NAME=$($(host_os)_cmake_system_name)
 $(1)_cmake += -DCMAKE_C_COMPILER_TARGET=$(host)
 $(1)_cmake += -DCMAKE_CXX_COMPILER_TARGET=$(host)
+# Windows resource compiler. CMake auto-derives it from a gcc toolchain
+# prefix, but not from the clang `--target=` driver used by the
+# aarch64-w64-mingw32 (llvm-mingw) host, where it would fall back to a bare
+# `windres` not on PATH. Set it explicitly for all mingw hosts (same compiler
+# CMake already picks for the x86_64 gcc host).
+ifeq ($(host_os),mingw32)
+$(1)_cmake += -DCMAKE_RC_COMPILER=`which $(host_RC)`
+endif
 endif
 endif
 endef

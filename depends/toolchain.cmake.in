@@ -91,6 +91,14 @@ set(CMAKE_STRIP "@STRIP@")
 set(CMAKE_OBJCOPY "@OBJCOPY@")
 set(CMAKE_OBJDUMP "@OBJDUMP@")
 
+# On Windows (mingw) set the resource compiler explicitly. CMake derives it
+# from a gcc toolchain prefix automatically, but cannot for the clang
+# `--target=` driver used by the aarch64-w64-mingw32 (llvm-mingw) host, where
+# it would otherwise fall back to a bare `windres` that is not on PATH.
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT "@RC@" STREQUAL "")
+  set(CMAKE_RC_COMPILER "@RC@")
+endif()
+
 # Using our own built dependencies should not be
 # affected by a potentially random environment.
 set(CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH OFF)
