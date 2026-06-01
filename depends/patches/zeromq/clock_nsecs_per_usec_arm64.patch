@@ -1,0 +1,22 @@
+Define nsecs_per_usec unconditionally so the clock_gettime() fallback builds.
+
+clock.cpp guards nsecs_per_usec behind `#ifndef ZMQ_HAVE_WINDOWS`, assuming
+Windows always reaches the rdtsc()/QueryPerformanceCounter paths. On
+x86_64-w64-mingw32 that holds (the GCC/x86 inline-asm rdtsc branch is taken).
+But clang targeting aarch64-w64-mingw32 is neither MSVC-ARM (no _MSC_VER) nor
+GCC-x86, so rdtsc() falls through to the generic clock_gettime() branch, which
+uses nsecs_per_usec -- producing "use of undeclared identifier 'nsecs_per_usec'".
+Move the constant out of the guard (usecs_per_sec is already unconditional).
+
+--- a/src/clock.cpp
++++ b/src/clock.cpp
+@@ -101,8 +101,8 @@ static f_compatible_get_tick_count64 my_get_tick_count64 =
+
+ #ifndef ZMQ_HAVE_WINDOWS
+ const uint64_t usecs_per_msec = 1000;
+-const uint64_t nsecs_per_usec = 1000;
+ #endif
++const uint64_t nsecs_per_usec = 1000;
+ const uint64_t usecs_per_sec = 1000000;
+
+ zmq::clock_t::clock_t () :
