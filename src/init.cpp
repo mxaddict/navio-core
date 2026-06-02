@@ -167,7 +167,8 @@ static fs::path GetPidFile(const ArgsManager& args)
 
 [[nodiscard]] static bool CreatePidFile(const ArgsManager& args)
 {
-    std::ofstream file{GetPidFile(args)};
+    std::ofstream file;
+    file.open(GetPidFile(args));
     if (file) {
 #ifdef WIN32
         tfm::format(file, "%d\n", GetCurrentProcessId());

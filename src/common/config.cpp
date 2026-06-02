@@ -125,7 +125,11 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
     }
 
     const auto conf_path{GetConfigFilePath()};
-    std::ifstream stream{conf_path};
+    // libc++ constrains the std::ifstream(std::filesystem::path) constructor to
+    // the exact type (is_same), rejecting our derived fs::path; open() takes a
+    // base-class reference and works on libc++ and libstdc++ alike.
+    std::ifstream stream;
+    stream.open(conf_path);
 
     // not ok to have a config file specified that cannot be opened
     if (IsArgSet("-conf") && !stream.good()) {
@@ -172,7 +176,8 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
             const size_t default_includes = add_includes({});
 
             for (const std::string& conf_file_name : conf_file_names) {
-                std::ifstream conf_file_stream{AbsPathForConfigVal(*this, fs::PathFromString(conf_file_name), /*net_specific=*/false)};
+                std::ifstream conf_file_stream;
+                conf_file_stream.open(AbsPathForConfigVal(*this, fs::PathFromString(conf_file_name), /*net_specific=*/false));
                 if (conf_file_stream.good()) {
                     if (!ReadConfigStream(conf_file_stream, conf_file_name, error, ignore_invalid_keys)) {
                         return false;

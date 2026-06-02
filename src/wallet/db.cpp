@@ -63,7 +63,8 @@ bool IsSQLiteFile(const fs::path& path)
     if (ec) LogPrintf("%s: %s %s\n", __func__, ec.message(), fs::PathToString(path));
     if (size < 512) return false;
 
-    std::ifstream file{path, std::ios::binary};
+    std::ifstream file;
+    file.open(path, std::ios::binary);
     if (!file.is_open()) return false;
 
     // Magic is at beginning and is 16 bytes long

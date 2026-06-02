@@ -101,7 +101,8 @@ bool CheckDiskSpace(const fs::path& dir, uint64_t additional_bytes)
 
 std::streampos GetFileSize(const char* path, std::streamsize max)
 {
-    std::ifstream file{path, std::ios::binary};
+    std::ifstream file;
+    file.open(path, std::ios::binary);
     file.ignore(max);
     return file.gcount();
 }

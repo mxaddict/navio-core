@@ -128,7 +128,8 @@ bool CreateFromDump(const ArgsManager& args, const std::string& name, const fs::
         error = strprintf(_("Dump file %s does not exist."), fs::PathToString(dump_path));
         return false;
     }
-    std::ifstream dump_file{dump_path};
+    std::ifstream dump_file;
+    dump_file.open(dump_path);
 
     // Compute the checksum
     HashWriter hasher{};
